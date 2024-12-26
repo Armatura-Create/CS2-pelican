@@ -1,9 +1,9 @@
-FROM registry.gitlab.steamos.cloud/steamrt/sniper/platform:latest-container-runtime-depot
+FROM        registry.gitlab.steamos.cloud/steamrt/sniper/platform:latest-container-runtime-depot
 
-LABEL author="Armatura" \
-      maintainer="alext303@gmail.com" \
-      org.opencontainers.image.description="Minimal SteamRT3 base image for Pelican CS2" \
-      org.opencontainers.image.source="https://github.com/Armatura-Create/CS2-Egg"
+LABEL       author="Armatura" \
+            maintainer="alext303@gmail.com" \
+            org.opencontainers.image.description="Minimal SteamRT3 base image for Pelican CS2" \
+            org.opencontainers.image.source="https://github.com/Armatura-Create/CS2-pelican"
 
 # Prep OS
 RUN         mkdir -p /etc/sudoers.d && \
@@ -27,7 +27,7 @@ RUN         chmod +x /scripts/*.sh && \
             chmod +x /utils/*.sh && \
             chmod +x /entrypoint.sh
 
-USER        root
+USER        container
 ENV         USER=container HOME=/home/container
 WORKDIR     /home/container
 
