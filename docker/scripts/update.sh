@@ -1,12 +1,102 @@
 #!/bin/bash
 source /utils/logging.sh
 
+# Путь к базовым файлам и файлам в контейнере
+BASE_FILES="/mnt"
+CONTAINER_FILES="/home/container"
+
 # Directories
 GAME_DIRECTORY="./game/csgo"
 OUTPUT_DIR="./game/csgo/addons"
 TEMP_DIR="./temps"
 ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
 VERSION_FILE="./game/versions.txt"
+
+copy_bin() {
+    log_message "Копирование папки game/bin из $BASE_FILES/game/bin в $CONTAINER_FILES/game/bin с заменой..." "running"
+    # Убедиться, что папка назначения существует
+    mkdir -p "$CONTAINER_FILES/game/bin"
+    # Копировать содержимое с заменой
+    rsync -a --delete "$BASE_FILES/game/bin/" "$CONTAINER_FILES/game/bin/"
+    log_message "Копирование папки bin завершено." "success"
+}
+
+copy_cfg() {
+    log_message "Копирование файлов game/csgo/cfg из $BASE_FILES/game/csgo/cfg в $CONTAINER_FILES/game/csgo/cfg..." "running"
+    
+    # Убедиться, что папка назначения существует
+    mkdir -p "$CONTAINER_FILES/game/csgo/cfg"
+
+    # Копировать только недостающие файлы и папки
+    rsync -av --ignore-existing "$BASE_FILES/game/csgo/cfg/" "$CONTAINER_FILES/game/csgo/cfg/"
+
+    # Проверить, завершилось ли копирование успешно
+    if [[ $? -eq 0 ]]; then
+        log_message "Копирование файлов из game/csgo/cfg завершено." "success"
+    else
+        log_message "Ошибка при копировании файлов из game/csgo/cfg." "error"
+    fi
+}
+
+# Функция для создания символических ссылок
+create_symlinks() {
+    log_message "Создание символических ссылок из $BASE_FILES в $CONTAINER_FILES..." "running"
+    find "$BASE_FILES" -type f | while read -r file; do
+        # Пропустить папку bin, так как она копируется отдельно
+        if [[ $file == "$BASE_FILES/game/bin/"* || $file == "$BASE_FILES/game/csgo/cfg/*" ]]; then
+            continue
+        fi
+
+        # Путь к файлу относительно BASE_FILES
+        relative_path="${file#$BASE_FILES/}"
+        # Путь к символической ссылке
+        symlink_path="$CONTAINER_FILES/$relative_path"
+
+        # Создать все необходимые поддиректории
+        mkdir -p "$(dirname "$symlink_path")"
+
+        # Попытка создания символической ссылки
+        if [ ! -L "$symlink_path" ]; then
+            ln -s "$file" "$symlink_path" && {
+                log_message "Создана ссылка: $symlink_path -> $file" "running"
+            } || {
+                log_message "Не удалось создать ссылку: $symlink_path -> $file. Попытка удаления существующего файла или ссылки." "warning"
+                # Удаление существующего файла или ссылки
+                if [ -e "$symlink_path" ]; then
+                    rm -f "$symlink_path" && {
+                        log_message "Удалён существующий файл или ссылка: $symlink_path" "running"
+                        # Повторная попытка создания символической ссылки
+                        ln -s "$file" "$symlink_path" && {
+                            log_message "Создана ссылка (повторно): $symlink_path -> $file" "success"
+                        } || {
+                            log_message "Повторное создание ссылки не удалось: $symlink_path -> $file" "error"
+                        }
+                    } || {
+                        log_message "Не удалось удалить существующий файл или ссылку: $symlink_path" "error"
+                    }
+                else
+                    log_message "Файл или ссылка отсутствуют, но создание ссылки всё равно не удалось: $symlink_path -> $file" "error"
+                fi
+            }
+        fi
+    done
+}
+
+# Функция для удаления устаревших символических ссылок
+remove_stale_symlinks() {
+    log_message "Проверка и удаление устаревших символических ссылок в $CONTAINER_FILES..." "running"
+    find "$CONTAINER_FILES" -type l | while read -r symlink; do
+        # Проверить, существует ли целевой файл
+        if [ ! -e "$symlink" ]; then
+            rm "$symlink" && {
+                log_message "Удалена устаревшая ссылка: $symlink" "running"
+            } || {
+                log_message "Не удалось удалить устаревшую ссылку: $symlink" "error"
+                exit 1
+            }
+        fi
+    done
+}
 
 get_current_version() {
     local addon="$1"
@@ -90,7 +180,7 @@ check_version() {
         return 0
     fi
 
-    log_message "No new version of $addon available. Current: $current" "debug"
+    log_message "No new version of $addon available. Current: $current" "suceess"
     return 1
 }
 

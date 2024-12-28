@@ -1,5 +1,6 @@
 #!/bin/bash
 UPDATE_IN_PROGRESS=0
+SERVERS_UUIDS=""
 
 start_update_countdown() {
     local required_version="$1"
@@ -14,7 +15,7 @@ start_update_countdown() {
         return 1
     fi
 
-    if [ ! -z "$UPDATE_COMMANDS" ]; then
+    if [ ! -z "$UPDATE_COMMANDS" ]; then # тут переделать на получение с /config/massage.json
         local start_time=$(date +%s)
         local commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
 
@@ -82,6 +83,22 @@ get_game_version() {
     return 1
 }
 
+#  Получаем сервера с Pelican которые имеют яйца с image = "base-files-cs2"
+get_servers() {
+    # local response=$(curl -s -w "%{http_code}" "$PELICAN_URL/api/client/servers" \
+    #     -H 'Accept: application/json' \
+    #     -H 'Content-Type: application/json' \
+    #     -H "Authorization: Bearer $PELICAN_API_TOKEN")
+
+    # local http_code=${response: -3}
+    # if [[ $http_code -lt 200 || $http_code -gt 299 ]]; then
+    #     log_message "Failed to get servers: HTTP $http_code" "error"
+    #     return 1
+    # fi
+
+    # echo "$response" | jq -r '.data[] | .attributes.uuid'
+}
+
 check_server_version() {
     if [ "$UPDATE_IN_PROGRESS" -eq 1 ]; then
         return 0
@@ -93,6 +110,8 @@ check_server_version() {
         log_message "Failed to get game version from steam.inf" "error"
         return 1
     fi
+
+    get_servers
 
     local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)"
     local response=$(curl -s \

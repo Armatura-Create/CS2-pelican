@@ -1,0 +1,13 @@
+{
+    "restart": {
+        "300": "Restarted successfully",
+        "60": "Failed to restart",
+        "30": "Failed to restart",
+        "10": "Failed to restart",
+        "5": "Failed to restart",
+        "4": "Failed to restart",
+        "3": "Failed to restart",
+        "2": "Failed to restart",
+        "1": "Failed to restart"
+    }
+}
