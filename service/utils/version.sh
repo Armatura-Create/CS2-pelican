@@ -2,9 +2,6 @@
 set -Eeuo pipefail
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
-source "$(dirname "$0")/logging.sh"
-source "$(dirname "$0")/managerPelican.sh"
-
 UPDATE_IN_PROGRESS=0
 
 get_game_version() {

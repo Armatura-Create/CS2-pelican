@@ -2,8 +2,6 @@
 set -Eeuo pipefail
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
-source "$(dirname "$0")/logging.sh"
-
 # Универсальная функция для установки или обновления CS2
 install_or_update() {
     local SRCDS_APPID="${SRCDS_APPID:-730}"

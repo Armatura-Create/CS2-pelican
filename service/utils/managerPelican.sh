@@ -2,8 +2,6 @@
 set -Eeuo pipefail
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
-source "$(dirname "$0")/logging.sh"
-
 #####################################################
 # 1) Получаем список серверов по нужному image (application API)
 #####################################################
