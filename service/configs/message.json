@@ -1,13 +1,13 @@
 {
     "restart_countdown": {
-        "300": "Внимание новое обновление CS2! Сервер будет перезапущен через 5 минут.",
-        "60": "Внимание новое обновление CS2! Сервер будет перезапущен через 1 минуту.",
-        "30": "Внимание новое обновление CS2! Сервер будет перезапущен через 30 секунд.",
-        "10": "Внимание новое обновление CS2! Сервер будет перезапущен через 10 секунд.",
-        "5": "Сервер будет перезапущен через 5 секунд.",
-        "4": "Сервер будет перезапущен через 4 секунд.",
-        "3": "Сервер будет перезапущен через 3 секунд.",
-        "2": "Сервер будет перезапущен через 2 секунд.",
-        "1": "Сервер перезапускается."
+        "300": "Attention: A new CS2 update is available! The server will restart in 5 minutes.",
+        "60": "Attention: A new CS2 update is available! The server will restart in 1 minute.",
+        "30": "Attention: A new CS2 update is available! The server will restart in 30 seconds.",
+        "10": "Attention: A new CS2 update is available! The server will restart in 10 seconds.",
+        "5": "The server will restart in 5 seconds.",
+        "4": "The server will restart in 4 seconds.",
+        "3": "The server will restart in 3 seconds.",
+        "2": "The server will restart in 2 seconds.",
+        "1": "The server is restarting."
     }
 }

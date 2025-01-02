@@ -16,7 +16,7 @@ source "./utils/version.sh"
 
 # При первом запуске проверим, что SteamCMD и CS2-файлы вообще есть
 check_initial_install() {
-    if [ ! -f "${BASE_DIR:-/home/cs2_base}/server/steamcmd/steamcmd.sh" ] || [ ! -d "${BASE_DIR:-/home/cs2_base}/server/csgo" ]; then
+    if [ ! -f "${BASE_DIR:-/home/cs2_base}/server/steamcmd/steamcmd.sh" ] || [ ! -d "${BASE_DIR:-/home/cs2_base}/server/game/csgo" ]; then
         log_message "Выполняем первоначальную установку CS2..." "running"
         install_or_update
     else
@@ -40,6 +40,9 @@ main_loop() {
             log_message "Останавливаем нужные сервера..." "running"
             local running_list
             running_list="$(stop_running_servers_for_update)"
+
+            # Ждём немного перед обновлением
+            sleep 10
 
             # Выполняем обновление через SteamCMD
             install_or_update

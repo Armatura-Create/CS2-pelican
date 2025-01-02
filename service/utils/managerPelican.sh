@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
+
 #####################################################
 # 1) Получаем список серверов по нужному image (application API)
 #####################################################
@@ -14,6 +16,11 @@ get_servers_by_image_app() {
 
     if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_APP_TOKEN:-}" ]; then
         log_message "Не заданы PELICAN_URL или PELICAN_APP_TOKEN" "error"
+        return 1
+    fi
+
+    if [ -z "${PELICAN_NODE_ID:-}" ]; then
+        log_message "Не задан PELICAN_NODE_ID" "error"
         return 1
     fi
 
@@ -35,11 +42,16 @@ get_servers_by_image_app() {
         return 1
     fi
 
-    # Фильтруем по image
+    # Фильтруем по image и node_id
     local server_ids
-    server_ids="$(echo "$body" | jq -r --arg IMG "$image_filter" '
+    server_ids="$(echo "$body" | jq -r \
+        --arg IMG "$image_filter" \
+        --argjson NODE "$PELICAN_NODE_ID" '
         .data[]
-        | select(.attributes.container.image == $IMG)
+        | select(
+            .attributes.container.image == $IMG
+            and .attributes.node == $NODE
+        )
         | .attributes.identifier
     ')"
 

@@ -2,10 +2,13 @@
 set -Eeuo pipefail
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/managerPelican.sh"
+
 UPDATE_IN_PROGRESS=0
 
 get_game_version() {
-    local steam_inf="${BASE_DIR:-/home/cs2_base}/server/csgo/steam.inf"
+    local steam_inf="${BASE_DIR:-/home/cs2_base}/server/game/csgo/steam.inf"
     if [ -f "$steam_inf" ]; then
         local patch_version
         patch_version=$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2 || true)
@@ -87,7 +90,6 @@ inform_players_and_wait() {
         # Рассылаем команду на все сервера, которые всё ещё running
         if [ -n "$servers" ]; then
             while IFS= read -r srv_id; do
-                # Допустим, в CS2 команда "say <текст>"
                 send_command "$srv_id" "say $message"
             done <<< "$servers"
         fi
