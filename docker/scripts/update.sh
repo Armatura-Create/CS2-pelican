@@ -43,7 +43,11 @@ create_symlinks() {
     log_message "Создание символических ссылок из $BASE_FILES в $CONTAINER_FILES..." "running"
     find "$BASE_FILES" -type f | while read -r file; do
         # Пропустить папку bin, так как она копируется отдельно
-        if [[ $file == "$BASE_FILES/game/bin/"* || $file == "$BASE_FILES/game/csgo/cfg/*" ]]; then
+        if [[ $file == "$BASE_FILES/game/bin/"* ]]; then
+            continue
+        fi
+
+        if [[ $file == "$BASE_FILES/game/csgo/cfg/"* ]]; then
             continue
         fi
 
