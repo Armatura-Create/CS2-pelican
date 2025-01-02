@@ -180,7 +180,7 @@ check_version() {
         return 0
     fi
 
-    log_message "No new version of $addon available. Current: $current" "suceess"
+    log_message "No new version of $addon available. Current: $current" "success"
     return 1
 }
 
