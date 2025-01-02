@@ -1,13 +1,8 @@
 {
-    "restart": {
-        "300": "Restarted successfully",
-        "60": "Failed to restart",
-        "30": "Failed to restart",
-        "10": "Failed to restart",
-        "5": "Failed to restart",
-        "4": "Failed to restart",
-        "3": "Failed to restart",
-        "2": "Failed to restart",
-        "1": "Failed to restart"
+    "restart_countdown": {
+        "300": "Внимание! Сервер будет перезапущен через 5 минут.",
+        "60": "Внимание! Сервер будет перезапущен через 1 минуту.",
+        "30": "Внимание! Сервер будет перезапущен через 30 секунд.",
+        "10": "Внимание! Сервер будет перезапущен через 10 секунд."
     }
 }

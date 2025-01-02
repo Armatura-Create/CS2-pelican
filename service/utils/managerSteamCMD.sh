@@ -1,78 +1,58 @@
 #!/bin/bash
+set -Eeuo pipefail
+trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
-# Set default values
-SRCDS_APPID=730
-STEAM_USER=anonymous
-STEAM_PASS=""
-STEAM_AUTH=""
-EXTRA_FLAGS=""
+source "$(dirname "$0")/logging.sh"
 
-instal_update() {
-    # Check if SteamCMD is not installed
-    if [ ! -f "/home/cs2_base/server/steamcmd/steamcmd.sh" ]; then
-        echo "Installing SteamCMD..."
-        STEAMCMD_URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
-        max_retries=3
-        retry=0
+# Универсальная функция для установки или обновления CS2
+install_or_update() {
+    local SRCDS_APPID="${SRCDS_APPID:-730}"
+    local STEAM_USER="${STEAM_USER:-anonymous}"
+    local STEAM_PASS="${STEAM_PASS:-}"
+    local STEAM_AUTH="${STEAM_AUTH:-}"
+    local EXTRA_FLAGS="${EXTRA_FLAGS:-}"
+    local BASE_DIR="${BASE_DIR:-/home/cs2_base}"
+    local STEAMCMD_URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
 
-        # Создаем необходимые директории
-        mkdir -p /home/cs2_base/server/steamcmd
-        mkdir -p /home/cs2_base/server/steamapps
+    if [ ! -f "$BASE_DIR/server/steamcmd/steamcmd.sh" ]; then
+        log_message "Устанавливаем SteamCMD..." "running"
+        mkdir -p "$BASE_DIR/server/steamcmd"
+        mkdir -p "$BASE_DIR/server/steamapps"
 
-        # Скачиваем SteamCMD с попытками повторной загрузки
+        local max_retries=3
+        local retry=0
         while [ $retry -lt $max_retries ]; do
             if curl -sSL --connect-timeout 30 --max-time 300 -o steamcmd.tar.gz "$STEAMCMD_URL"; then
                 break
             fi
             ((retry++))
-            echo "Download attempt $retry failed, retrying..."
+            log_message "Попытка загрузки SteamCMD #$retry провалилась, повтор..." "error"
             sleep 5
         done
-
         if [ $retry -eq $max_retries ]; then
-            echo "Failed to download SteamCMD after $max_retries attempts"
+            log_message "Не удалось скачать SteamCMD после $max_retries попыток" "error"
             exit 1
         fi
 
-        # Распаковываем SteamCMD
-        if ! tar -xzvf steamcmd.tar.gz -C /home/cs2_base/server/steamcmd; then
-            echo "Failed to extract SteamCMD"
-            exit 1
-        fi
+        tar -xzvf steamcmd.tar.gz -C "$BASE_DIR/server/steamcmd"
         rm steamcmd.tar.gz
-
-        # Проверяем наличие директории SteamCMD
-        if [ ! -d "/home/cs2_base/server/steamcmd" ]; then
-            echo "steamcmd directory does not exist"
-            exit 1
-        fi
-
-        # Исправляем права доступа
-        chown -R root:root /home/cs2_base/server/steamcmd
-        chmod +x /home/cs2_base/server/steamcmd/linux32/steamcmd
-
-        # Проверяем зависимости
-        echo "Installing dependencies..."
-        apt update
-        apt install -y lib32gcc-s1 lib32stdc++6
-
-        export LD_LIBRARY_PATH=/home/cs2_base/server/steamcmd/linux32:$LD_LIBRARY_PATH
+        chmod +x "$BASE_DIR/server/steamcmd/linux32/steamcmd"
+        apt update && apt install -y lib32gcc-s1 lib32stdc++6
     fi
 
-    # Устанавливаем игру через SteamCMD
-    /home/cs2_base/server/steamcmd/steamcmd.sh +force_install_dir /home/cs2_base/server +login ${STEAM_USER} ${STEAM_PASS} ${STEAM_AUTH} +app_update ${SRCDS_APPID} ${EXTRA_FLAGS} +quit
+    log_message "Запускаем SteamCMD для установки/обновления CS2" "running"
+    "$BASE_DIR/server/steamcmd/steamcmd.sh" \
+      +force_install_dir "$BASE_DIR/server" \
+      +login "$STEAM_USER" "$STEAM_PASS" "$STEAM_AUTH" \
+      +app_update "$SRCDS_APPID" $EXTRA_FLAGS \
+      +quit
 
-    # Настраиваем 32-битные библиотеки
-    mkdir -p /home/cs2_base/server/.steam/sdk32
-    cp -v /home/cs2_base/server/steamcmd/linux32/steamclient.so /home/cs2_base/server/.steam/sdk32/steamclient.so || {
-        echo "Failed to copy 32-bit libraries"
-    }
+    # Копируем библиотеки
+    mkdir -p "$BASE_DIR/server/.steam/sdk32"
+    cp -v "$BASE_DIR/server/steamcmd/linux32/steamclient.so" "$BASE_DIR/server/.steam/sdk32/" || true
 
-    # Настраиваем 64-битные библиотеки
-    mkdir -p /home/cs2_base/server/.steam/sdk64
-    cp -v /home/cs2_base/server/steamcmd/linux64/steamclient.so /home/cs2_base/server/.steam/sdk64/steamclient.so || {
-        echo "Failed to copy 64-bit libraries"
-    }
+    mkdir -p "$BASE_DIR/server/.steam/sdk64"
+    cp -v "$BASE_DIR/server/steamcmd/linux64/steamclient.so" "$BASE_DIR/server/.steam/sdk64/" || true
 
-    echo "SteamCMD installed/updated successfully"
+    log_message "Установка/обновление CS2 завершена." "success"
 }

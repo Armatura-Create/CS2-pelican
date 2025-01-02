@@ -1,156 +1,145 @@
 #!/bin/bash
+set -Eeuo pipefail
+trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
+
+source "$(dirname "$0")/logging.sh"
+source "$(dirname "$0")/managerPelican.sh"
+
 UPDATE_IN_PROGRESS=0
-SERVERS_UUIDS=""
-
-start_update_countdown() {
-    local required_version="$1"
-
-    # Set update in progress flag
-    UPDATE_IN_PROGRESS=1
-
-    # Validate essential API variables
-    if [ -z "$PELICAN_API_TOKEN" ] || [ -z "$P_SERVER_UUID" ] || [ -z "$PELICAN_URL" ]; then
-        log_message "Missing required API variables" "error"
-        UPDATE_IN_PROGRESS=0
-        return 1
-    fi
-
-    if [ ! -z "$UPDATE_COMMANDS" ]; then # тут переделать на получение с /config/massage.json
-        local start_time=$(date +%s)
-        local commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
-
-        while IFS=' ' read -r seconds command || [ -n "$seconds" ]; do
-            if [ "$seconds" -gt "$UPDATE_COUNTDOWN_TIME" ]; then
-                continue
-            fi
-
-            local current_time=$(date +%s)
-            local elapsed=$((current_time - start_time))
-            local target_wait=$((UPDATE_COUNTDOWN_TIME - seconds))
-            local wait_time=$((target_wait - elapsed))
-
-            if [ "$wait_time" -gt 0 ]; then
-                sleep $wait_time
-            fi
-
-            if [ -n "$command" ]; then
-                local response=$(curl -s -w "%{http_code}" -X POST \
-                    -H "Authorization: Bearer $PELICAN_API_TOKEN" \
-                    -H "Content-Type: application/json" \
-                    --data "{\"command\": \"$command\"}" \
-                    "$$PELICAN_URL/api/client/servers/$P_SERVER_UUID/command")
-
-                local http_code=${response: -3}
-                if [[ $http_code -lt 200 || $http_code -gt 299 ]]; then
-                    log_message "Failed to send command by Auto-Restart: HTTP $http_code" "error"
-                    UPDATE_IN_PROGRESS=0
-                    return 1
-                fi
-            fi
-        done <<< "$commands"
-    else
-        sleep $UPDATE_COUNTDOWN_TIME
-    fi
-
-    log_message "Restarting server by Auto-Restart..." "running"
-
-    # Server restart
-    local restart_response=$(curl -s -w "%{http_code}" "$$PELICAN_URL/api/client/servers/$P_SERVER_UUID/power" \
-        -H 'Accept: application/json' \
-        -H 'Content-Type: application/json' \
-        -H "Authorization: Bearer $PELICAN_API_TOKEN" \
-        -X POST \
-        -d '{"signal": "restart"}')
-
-    local restart_code=${restart_response: -3}
-    if [[ $restart_code -lt 200 || $restart_code -gt 299 ]]; then
-        log_message "Failed to restart server: HTTP $restart_code" "error"
-        UPDATE_IN_PROGRESS=0
-        return 1
-    fi
-}
 
 get_game_version() {
-    local steam_inf="./game/csgo/steam.inf"
+    local steam_inf="${BASE_DIR:-/home/cs2_base}/server/csgo/steam.inf"
     if [ -f "$steam_inf" ]; then
-        local patch_version=$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2)
-        if [ ! -z "$patch_version" ]; then
-            # Remove dots and convert to number (e.g., 1.40.5.1 -> 14051)
-            echo "$patch_version" | tr -d '.'
-            return 0
-        fi
+        local patch_version
+        patch_version=$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2 || true)
+        [ -n "$patch_version" ] && echo "${patch_version//./}" || echo ""
+    else
+        echo ""
     fi
-    return 1
-}
-
-#  Получаем сервера с Pelican которые имеют яйца с image = "base-files-cs2"
-get_servers() {
-    # local response=$(curl -s -w "%{http_code}" "$PELICAN_URL/api/client/servers" \
-    #     -H 'Accept: application/json' \
-    #     -H 'Content-Type: application/json' \
-    #     -H "Authorization: Bearer $PELICAN_API_TOKEN")
-
-    # local http_code=${response: -3}
-    # if [[ $http_code -lt 200 || $http_code -gt 299 ]]; then
-    #     log_message "Failed to get servers: HTTP $http_code" "error"
-    #     return 1
-    # fi
-
-    # echo "$response" | jq -r '.data[] | .attributes.uuid'
 }
 
 check_server_version() {
+    # Если уже идёт обновление, выходим
     if [ "$UPDATE_IN_PROGRESS" -eq 1 ]; then
         return 0
     fi
 
-    local current_version=$(get_game_version)
-
+    local current_version
+    current_version="$(get_game_version)"
     if [ -z "$current_version" ]; then
-        log_message "Failed to get game version from steam.inf" "error"
+        log_message "Не удалось определить локальную версию в steam.inf" "error"
         return 1
     fi
 
-    get_servers
-
     local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)"
-    local response=$(curl -s \
-        -H "Cache-Control: no-cache, no-store" \
-        -H "Pragma: no-cache" \
-        "$api_url")
+    local response
+    response="$(curl -s "$api_url" || true)"
 
-    local up_to_date=$(echo "$response" | jq -r '.response.up_to_date')
-
+    local up_to_date
+    up_to_date="$(echo "$response" | jq -r '.response.up_to_date // empty')"
     if [ "$up_to_date" = "false" ]; then
-        local required_version=$(echo "$response" | jq -r '.response.required_version')
-        local message=$(echo "$response" | jq -r '.response.message')
+        local required_version
+        required_version="$(echo "$response" | jq -r '.response.required_version')"
+        local message
+        message="$(echo "$response" | jq -r '.response.message')"
 
-        if [ ! -z "$required_version" ]; then
-            log_message "New version detected: $required_version (current: $current_version)" "running"
-            log_message "Steam message: $message" "running"
-
-            if [ -z "$UPDATE_COUNTDOWN_TIME" ]; then
-                UPDATE_COUNTDOWN_TIME=300
-            fi
-
-            log_message "Countdown initiated to restart server: $UPDATE_COUNTDOWN_TIME seconds" "running"
-
-            if [ ! -z "$UPDATE_COMMANDS" ]; then
-                start_update_countdown "$required_version"
-            fi
-        else
-            log_message "Failed to get required version from API response" "error"
-            log_message "Full response: $response" "debug"
-            return 1
-        fi
+        log_message "Обнаружена новая версия: $required_version (текущая: $current_version)" "running"
+        log_message "Steam-сообщение: $message" "debug"
+        return 2
     else
-        log_message "Server is up to date. Current version: $current_version (checked at: $(date '+%Y-%m-%d %H:%M:%S'))" "debug"
+        log_message "Сервер актуален: $current_version" "debug"
+        return 0
     fi
 }
 
-version_check_loop() {
-    while [ ${UPDATE_AUTO_RESTART:-0} -eq 1 ] && [ $UPDATE_IN_PROGRESS -eq 0 ]; do
-        sleep "${VERSION_CHECK_INTERVAL:-300}"
-        check_server_version
-    done
+#############################################
+# Оповестить игроков на всех running-серверах
+# (функция ниже: inform_players_and_wait)
+#############################################
+inform_players_and_wait() {
+    local countdown_time="${1:-300}"
+    local msg_file="configs/message.json"
+    [ -f "$msg_file" ] || return 0
+
+    local lines
+    lines="$(jq -r '.restart_countdown | to_entries | .[] | "\(.key) \(.value)"' "$msg_file" 2>/dev/null || true)"
+    [ -n "$lines" ] || return 0
+
+    local start_time
+    start_time=$(date +%s)
+
+    # 1) Берём список серверов, которые running + image
+    local servers
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-docker.io/scrender/base-files-cs2:dev}")"
+
+    while IFS=' ' read -r seconds message || [ -n "$seconds" ]; do
+        [[ "$seconds" =~ ^[0-9]+$ ]] || continue
+        local s_val=$((seconds))
+        if [ "$s_val" -gt "$countdown_time" ]; then
+            continue
+        fi
+
+        local target_time=$((start_time + (countdown_time - s_val)))
+        local now
+        now=$(date +%s)
+        local wait_time=$((target_time - now))
+        if [ "$wait_time" -gt 0 ]; then
+            sleep "$wait_time"
+        fi
+
+        # Рассылаем команду на все сервера, которые всё ещё running
+        if [ -n "$servers" ]; then
+            while IFS= read -r srv_id; do
+                # Допустим, в CS2 команда "say <текст>"
+                send_command "$srv_id" "say $message"
+            done <<< "$servers"
+        fi
+    done <<< "$lines"
+
+    # Проверим, сколько осталось
+    local final_now
+    final_now=$(date +%s)
+    local used=$((final_now - start_time))
+    local leftover=$((countdown_time - used))
+    if [ "$leftover" -gt 0 ]; then
+        sleep "$leftover"
+    fi
+}
+
+#############################################
+# Останавливаем только те, что были running
+# Возвращаем список идентификаторов
+#############################################
+stop_running_servers_for_update() {
+    local servers
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-docker.io/scrender/base-files-cs2:dev}")"
+    if [ -z "$servers" ]; then
+        echo ""
+        return 0
+    fi
+
+    while IFS= read -r srv_id; do
+        log_message "Останавливаем сервер $srv_id" "running"
+        power_action "$srv_id" "stop"
+    done <<< "$servers"
+
+    # Возвращаем список, чтобы потом запускать именно их
+    echo "$servers"
+}
+
+#############################################
+# Запускаем с интервалом 10 сек. только те,
+# что были running до остановки
+#############################################
+start_servers_with_delay() {
+    local servers_list="$1"
+    if [ -z "$servers_list" ]; then
+        return 0
+    fi
+
+    while IFS= read -r srv_id; do
+        log_message "Запускаем сервер $srv_id" "running"
+        power_action "$srv_id" "start"
+        sleep 10
+    done <<< "$servers_list"
 }
