@@ -23,13 +23,16 @@ VERSION_FILE="./game/versions.txt"
 # Функция: копирование папки bin
 # ===========================
 copy_bin() {
-    log_message "Копирование папки game/bin из $BASE_FILES/game/bin в $CONTAINER_FILES/game/bin с удалением лишнего (rsync --delete)..." "running"
+    log_message "Копирование папки game/bin из $BASE_FILES/game/bin в $CONTAINER_FILES/game/bin с удалением лишнего за исключением папки steamapps (rsync --delete)..." "running"
 
     # Создаём папку назначения, если её нет
     mkdir -p "$CONTAINER_FILES/game/bin"
 
-    # Копируем содержимое с полным удалением того, чего нет в source
-    rsync -a --delete "$BASE_FILES/game/bin/" "$CONTAINER_FILES/game/bin/"
+    # Копируем содержимое с полным удалением того, чего нет в source за исключением папки steamapps
+    rsync -a --delete \
+        --exclude='linuxsteamrt64/steamapps/' \
+        "$BASE_FILES/game/bin/" \
+        "$CONTAINER_FILES/game/bin/"
     log_message "Копирование папки bin завершено." "success"
 }
 

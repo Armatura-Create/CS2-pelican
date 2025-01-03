@@ -17,6 +17,7 @@ RUN         apt update && \
 
 # Create directories and copy files
 RUN         mkdir -p /scripts /utils
+RUN         mkdir -p /mnt
 COPY        ./scripts/* /scripts/
 COPY        ./utils/* /utils/
 COPY        ./entrypoint.sh /entrypoint.sh
