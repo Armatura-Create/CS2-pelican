@@ -42,7 +42,8 @@ copy_cfg() {
     # Создаём папку назначения, если её нет
     mkdir -p "$CONTAINER_FILES/game/csgo/cfg"
 
-    # Копируем только те файлы/папки, которых нет в целевой директории (rsync --ignore-existing)
+    # Копируем только те файлы/папки, которых нет в целевой директории
+    # (rsync --ignore-existing)
     rsync -av --ignore-existing "$BASE_FILES/game/csgo/cfg/" "$CONTAINER_FILES/game/csgo/cfg/"
 
     # Проверяем код выхода rsync
@@ -61,13 +62,12 @@ create_symlinks() {
 
     # Перебираем все файлы внутри $BASE_FILES
     find "$BASE_FILES" -type f | while read -r file; do
-
         # Пропускаем папку bin, т.к. она копируется отдельно (copy_bin)
         if [[ $file == "$BASE_FILES/game/bin/"* ]]; then
             continue
         fi
 
-        # Пропускаем всё, что лежит в game/csgo/cfg, т.к. копируем cfg отдельно
+        # Пропускаем всё, что лежит в game/csgo/cfg, т.к. cfg копируются отдельно
         if [[ $file == "$BASE_FILES/game/csgo/cfg/"* ]]; then
             continue
         fi
@@ -101,10 +101,10 @@ create_symlinks() {
                         log_message "Не удалось удалить существующий файл или ссылку: $symlink_path" "error"
                     }
                 else
-                    # Если файла там нет, возможно недостаточно прав или иная ошибка
+                    # Если файла/ссылки там нет, возможно недостаточно прав или иная ошибка
                     log_message "Файл/ссылка отсутствуют, но создать ссылку всё равно не удалось: $symlink_path -> $file" "error"
                 fi
-            fi
+            }
         fi
     done
 }
@@ -233,7 +233,7 @@ check_version() {
 cleanup_and_update() {
     # Если в переменных окружения включена очистка (CLEANUP_ENABLED), запускаем cleanup
     if [ "${CLEANUP_ENABLED:-0}" = "1" ]; then
-        cleanup  # Функция cleanup где-то должна быть объявлена
+        cleanup  # Функция cleanup должна быть объявлена где-то ещё
     fi
 
     mkdir -p "$TEMP_DIR"
@@ -425,7 +425,7 @@ configure_metamod() {
             # Используем awk, чтобы вставить новую строку после "Game_LowViolence"
             awk -v new_entry="$GAMEINFO_ENTRY" '
                 BEGIN { found=0; }
-                // {
+                {
                     if (found) {
                         print new_entry;
                         found=0;
