@@ -40,6 +40,12 @@ handle_error() {
     local line_number="${1:-}"
     local last_command="${2:-$BASH_COMMAND}"
 
+    # Пропускаем обработку для указанных кодов
+    if [[ $exit_code -eq 200 || $exit_code -eq 404 || $exit_code -eq 500 ]]; then
+        return $exit_code
+    fi
+
+    # Обработка других ошибок
     if [ $exit_code -ne 0 ]; then
         log_message "Error on line $line_number: $last_command (exit code $exit_code)" "error"
     fi

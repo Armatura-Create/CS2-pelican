@@ -28,24 +28,36 @@ check_server_version() {
     current_version="$(get_game_version)"
     if [ -z "$current_version" ]; then
         log_message "Не удалось определить локальную версию в steam.inf" "error"
-        return 1
+        return 404
     fi
 
-    local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)"
+    local api_url=$(echo "https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)" | tr -d '[:space:]')
     local response
     response="$(curl -s "$api_url" || true)"
 
+    # Проверка на пустой ответ
+    if [ -z "$response" ]; then
+        log_message "API Steam не вернул ответ" "error"
+        return 500
+    fi
+
+    # Проверка корректности JSON
+    if ! echo "$response" | jq . > /dev/null 2>&1; then
+        log_message "Некорректный JSON в ответе API Steam: $response" "error"
+        return 500
+    fi
+
     local up_to_date
-    up_to_date="$(echo "$response" | jq -r '.response.up_to_date // empty')"
+    up_to_date="$(echo "$response" | jq -r '.response.up_to_date')"
     if [ "$up_to_date" = "false" ]; then
         local required_version
         required_version="$(echo "$response" | jq -r '.response.required_version')"
         local message
         message="$(echo "$response" | jq -r '.response.message')"
 
-        log_message "Обнаружена новая версия: $required_version (текущая: $current_version)" "running"
+        log_message "Обнаружена новая версия: $required_version текущая: [$current_version]" "running"
         log_message "Steam-сообщение: $message" "debug"
-        return 2
+        return 200
     else
         log_message "Сервер актуален: $current_version" "debug"
         return 0
@@ -70,7 +82,7 @@ inform_players_and_wait() {
 
     # 1) Берём список серверов, которые running + image
     local servers
-    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-docker.io/scrender/base-files-cs2:dev}")"
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-docker.io/scrender/base-files-cs2:latest}")"
 
     while IFS=' ' read -r seconds message || [ -n "$seconds" ]; do
         [[ "$seconds" =~ ^[0-9]+$ ]] || continue

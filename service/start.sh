@@ -26,9 +26,12 @@ check_initial_install() {
 
 main_loop() {
     while true; do
+        set +e
         check_server_version
         local status=$?
-        if [ $status -eq 2 ]; then
+        set -e
+
+        if [ $status -eq 200 ]; then
             UPDATE_IN_PROGRESS=1
 
             # Обратный отсчёт и уведомление игроков — только на тех, что running
