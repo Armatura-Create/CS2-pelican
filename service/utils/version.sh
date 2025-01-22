@@ -33,7 +33,18 @@ check_server_version() {
 
     local api_url=$(echo "https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)" | tr -d '[:space:]')
     local response
-    response="$(curl -s "$api_url" || true)"
+    local http_status
+
+    # Выполняем запрос и сохраняем HTTP-статус
+    response="$(curl -s -w "%{http_code}" "$api_url")"
+    http_status="${response: -3}"  # Последние 3 символа — это код статуса
+    response="${response::-3}"    # Убираем код статуса из ответа
+
+     # Проверка статуса HTTP
+    if [ "$http_status" -ne 200 ]; then
+        log_message "Ошибка API Steam. HTTP-статус: $http_status" "error"
+        return 0
+    fi
 
     # Проверка на пустой ответ
     if [ -z "$response" ]; then
