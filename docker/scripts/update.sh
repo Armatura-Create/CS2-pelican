@@ -283,7 +283,7 @@ update_addon() {
 
     # Ищем ссылку на zip-файл
     local asset_url
-    asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-build-.*-linux-.*\.zip')
+    asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-linux-.*\.zip')
 
     # Ищем tag_name, чтобы понять версию
     local new_version
