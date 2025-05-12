@@ -1,18 +1,14 @@
 #!/bin/bash
+set -Eeuo pipefail
+
 source /utils/logging.sh
+trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 # ===========================
-# Базовые пути
+# Пути по умолчанию
 # ===========================
-# Путь к базовым файлам (монтируется в Docker)
 BASE_FILES="/mnt"
-
-# Путь к файлам внутри контейнера
 CONTAINER_FILES="/home/container"
-
-# ===========================
-# Основные директории
-# ===========================
 GAME_DIRECTORY="./game/csgo"
 OUTPUT_DIR="./game/csgo/addons"
 TEMP_DIR="./temps"
@@ -20,92 +16,65 @@ ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
 VERSION_FILE="./game/versions.txt"
 
 # ===========================
-# Функция: копирование папки bin
+# Копирование папки bin
 # ===========================
 copy_bin() {
-    log_message "Копирование папки game/bin из $BASE_FILES/game/bin в $CONTAINER_FILES/game/bin с удалением лишнего за исключением папки steamapps (rsync --delete)..." "running"
-
-    # Создаём папку назначения, если её нет
+    log_message "Копируем /game/bin из $BASE_FILES в $CONTAINER_FILES (rsync --delete)..." "running"
     mkdir -p "$CONTAINER_FILES/game/bin"
 
-    # Копируем содержимое с полным удалением того, чего нет в source за исключением папки steamapps
     rsync -a --delete \
         --exclude='linuxsteamrt64/steamapps/' \
         "$BASE_FILES/game/bin/" \
         "$CONTAINER_FILES/game/bin/"
-    log_message "Копирование папки bin завершено." "success"
+
+    log_message "Копирование bin завершено." "success"
 }
 
 # ===========================
-# Функция: копирование только недостающих cfg
+# Копирование только недостающих cfg
 # ===========================
 copy_cfg() {
-    log_message "Копирование файлов game/csgo/cfg из $BASE_FILES/game/csgo/cfg в $CONTAINER_FILES/game/csgo/cfg..." "running"
-    
-    # Создаём папку назначения, если её нет
+    log_message "Копируем /game/csgo/cfg из $BASE_FILES в $CONTAINER_FILES (только недостающие)..." "running"
     mkdir -p "$CONTAINER_FILES/game/csgo/cfg"
 
-    # Копируем только те файлы/папки, которых нет в целевой директории
-    # (rsync --ignore-existing)
-    rsync -av --ignore-existing "$BASE_FILES/game/csgo/cfg/" "$CONTAINER_FILES/game/csgo/cfg/"
+    rsync -av --ignore-existing \
+        "$BASE_FILES/game/csgo/cfg/" \
+        "$CONTAINER_FILES/game/csgo/cfg/"
 
-    # Проверяем код выхода rsync
-    if [[ $? -eq 0 ]]; then
-        log_message "Копирование файлов из game/csgo/cfg завершено." "success"
-    else
-        log_message "Ошибка при копировании файлов из game/csgo/cfg." "error"
-    fi
+    log_message "Копирование cfg завершено." "success"
 }
 
 # ===========================
-# Функция: создание символических ссылок
+# Создание символьных ссылок (прочие файлы)
 # ===========================
 create_symlinks() {
-    log_message "Создание символических ссылок из $BASE_FILES в $CONTAINER_FILES..." "running"
+    log_message "Создаём символьные ссылки из $BASE_FILES в $CONTAINER_FILES..." "running"
 
     # Перебираем все файлы внутри $BASE_FILES
     find "$BASE_FILES" -type f | while read -r file; do
-        # Пропускаем папку bin, т.к. она копируется отдельно (copy_bin)
+        # Пропускаем bin/ и cfg/, они копируются отдельно
         if [[ $file == "$BASE_FILES/game/bin/"* ]]; then
             continue
         fi
-
-        # Пропускаем всё, что лежит в game/csgo/cfg, т.к. cfg копируются отдельно
         if [[ $file == "$BASE_FILES/game/csgo/cfg/"* ]]; then
             continue
         fi
 
-        # Вычисляем относительный путь к файлу от BASE_FILES
-        relative_path="${file#$BASE_FILES/}"
+        # Относительный путь
+        local relative_path="${file#$BASE_FILES/}"
+        local symlink_path="$CONTAINER_FILES/$relative_path"
 
-        # Определяем, куда будем делать ссылку в контейнере
-        symlink_path="$CONTAINER_FILES/$relative_path"
-
-        # Создаём недостающие поддиректории
         mkdir -p "$(dirname "$symlink_path")"
 
-        # Если ссылка ещё не существует, пытаемся создать
         if [ ! -L "$symlink_path" ]; then
-            ln -s "$file" "$symlink_path" && {
-                log_message "Создана символическая ссылка: $symlink_path -> $file" "running"
-            } || {
-                # Если не удалось, пробуем удалить существующий файл и повторить
-                log_message "Не удалось создать ссылку: $symlink_path -> $file. Пытаемся удалить существующий файл или ссылку..." "warning"
+            ln -s "$file" "$symlink_path" 2>/dev/null || {
+                log_message "Не удалось создать ссылку: $symlink_path -> $file" "warning"
+                # Пытаемся удалить и повторить
                 if [ -e "$symlink_path" ]; then
-                    rm -f "$symlink_path" && {
-                        log_message "Удалён существующий файл или ссылка: $symlink_path" "running"
-                        # Повторная попытка
-                        ln -s "$file" "$symlink_path" && {
-                            log_message "Символьная ссылка создана повторно: $symlink_path -> $file" "success"
-                        } || {
-                            log_message "Повторное создание ссылки не удалось: $symlink_path -> $file" "error"
-                        }
-                    } || {
-                        log_message "Не удалось удалить существующий файл или ссылку: $symlink_path" "error"
+                    rm -f "$symlink_path"
+                    ln -s "$file" "$symlink_path" || {
+                        log_message "Повторное создание ссылки не удалось: $symlink_path -> $file" "error"
                     }
-                else
-                    # Если файла/ссылки там нет, возможно недостаточно прав или иная ошибка
-                    log_message "Файл/ссылка отсутствуют, но создать ссылку всё равно не удалось: $symlink_path -> $file" "error"
                 fi
             }
         fi
@@ -113,29 +82,22 @@ create_symlinks() {
 }
 
 # ===========================
-# Функция: удаление устаревших символьных ссылок
+# Удаление битых символьных ссылок
 # ===========================
 remove_stale_symlinks() {
-    log_message "Проверка и удаление устаревших символических ссылок в $CONTAINER_FILES..." "running"
+    log_message "Ищем и удаляем битые ссылки в $CONTAINER_FILES..." "running"
 
-    # Находим все ссылки в $CONTAINER_FILES
     find "$CONTAINER_FILES" -type l | while read -r symlink; do
-        # Если целевой файл не существует (битая ссылка) — удаляем её
         if [ ! -e "$symlink" ]; then
-            rm "$symlink" && {
-                log_message "Удалена устаревшая ссылка: $symlink" "running"
-            } || {
-                log_message "Не удалось удалить устаревшую ссылку: $symlink" "error"
-                exit 1
-            }
+            rm "$symlink" && \
+                log_message "Удалена битая ссылка: $symlink" "running"
         fi
     done
 }
 
 # ===========================
-# Функции для работы с версиями
+# Работа с versions.txt
 # ===========================
-# Получаем текущую версию указанного дополнения (Metamod, CSS и т.д.)
 get_current_version() {
     local addon="$1"
     if [ -f "$VERSION_FILE" ]; then
@@ -145,12 +107,11 @@ get_current_version() {
     fi
 }
 
-# Обновляем/добавляем новую версию в файл versions.txt
 update_version_file() {
     local addon="$1"
     local new_version="$2"
 
-    if grep -q "^$addon=" "$VERSION_FILE" 2>/dev/null; then
+    if [ -f "$VERSION_FILE" ] && grep -q "^$addon=" "$VERSION_FILE"; then
         sed -i "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE"
     else
         echo "$addon=$new_version" >> "$VERSION_FILE"
@@ -158,20 +119,18 @@ update_version_file() {
 }
 
 # ===========================
-# Единая функция загрузки и распаковки (zip / tar.gz)
+# Универсальная загрузка и распаковка
 # ===========================
 handle_download_and_extract() {
     local url="$1"
     local output_file="$2"
     local extract_dir="$3"
-    local file_type="$4"  # "zip" или "tar.gz"
+    local file_type="$4" # "zip" | "tar.gz"
 
-    log_message "Загрузка файла с адреса: $url" "debug"
-
+    log_message "Загрузка файла: $url" "debug"
     local max_retries=3
     local retry=0
 
-    # Несколько попыток скачать файл
     while [ $retry -lt $max_retries ]; do
         if curl -fsSL -m 300 -o "$output_file" "$url"; then
             break
@@ -186,30 +145,28 @@ handle_download_and_extract() {
         return 1
     fi
 
-    # Проверяем, что файл не пустой
     if [ ! -s "$output_file" ]; then
-        log_message "Скачанный файл пуст" "error"
+        log_message "Скачанный файл пуст!" "error"
         return 1
     fi
 
-    log_message "Распаковываем в $extract_dir" "debug"
+    log_message "Распаковка в $extract_dir..." "debug"
     mkdir -p "$extract_dir"
 
-    case $file_type in
+    case "$file_type" in
         "zip")
             unzip -qq -o "$output_file" -d "$extract_dir" || {
-                log_message "Ошибка при распаковке zip-файла" "error"
+                log_message "Ошибка распаковки zip-файла: $url" "error"
                 return 1
             }
             ;;
         "tar.gz")
             tar -xzf "$output_file" -C "$extract_dir" || {
-                log_message "Ошибка при распаковке tar.gz" "error"
+                log_message "Ошибка распаковки tar.gz: $url" "error"
                 return 1
             }
             ;;
     esac
-
     return 0
 }
 
@@ -218,40 +175,39 @@ handle_download_and_extract() {
 # ===========================
 check_version() {
     local addon="$1"
-    local current="${2:-none}"
+    local current="$2"
     local new="$3"
 
     if [ "$current" != "$new" ]; then
-        log_message "Найдена новая версия для $addon: $new (текущая: $current)" "running"
+        log_message "Новая версия для $addon: $new (была $current)" "running"
         return 0
     fi
-
-    log_message "У $addon нет новой версии. Текущая версия: $current" "success"
+    log_message "У $addon актуальная версия: $current" "success"
     return 1
 }
 
 # ===========================
-# Очистка и обновление (Metamod/CSS)
+# Обновление Metamod / CSS и пр.
 # ===========================
 cleanup_and_update() {
-    # Если в переменных окружения включена очистка (CLEANUP_ENABLED), запускаем cleanup
+    # Если включена очистка, запускаем
     if [ "${CLEANUP_ENABLED:-0}" = "1" ]; then
-        cleanup  # Функция cleanup должна быть объявлена где-то ещё
+        cleanup
     fi
 
     mkdir -p "$TEMP_DIR"
 
-    # Логика автообновления metamod
+    # Обновление Metamod (если включено)
     if [ "${METAMOD_AUTOUPDATE:-0}" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "${CSS_AUTOUPDATE:-0}" = "1" ]); then
         update_metamod
     fi
 
-    # Логика автообновления CounterStrikeSharp (CSS)
+    # Обновление CounterStrikeSharp (CSS)
     if [ "${CSS_AUTOUPDATE:-0}" = "1" ]; then
         update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
     fi
 
-    # Если нужно обновить server.cfg
+    # Обновляем server.cfg (если нужно)
     if [ "${UPDATE_CFG_FILE:-0}" = "1" ]; then
         update_server_cfg
     fi
@@ -259,9 +215,6 @@ cleanup_and_update() {
     rm -rf "$TEMP_DIR"
 }
 
-# ===========================
-# Обновление конкретного дополнения (например, CSS)
-# ===========================
 update_addon() {
     local repo="$1"
     local output_path="$2"
@@ -272,171 +225,132 @@ update_addon() {
     mkdir -p "$output_path" "$temp_dir"
     rm -rf "$temp_dir"/*
 
-    # Запрашиваем GitHub Releases
     local api_response
-    api_response=$(curl -s "https://api.github.com/repos/$repo/releases/latest")
-
+    api_response="$(curl -s "https://api.github.com/repos/$repo/releases/latest")" || true
     if [ -z "$api_response" ]; then
-        log_message "Не удалось получить информацию о релизе для репо $repo" "error"
+        log_message "Не удалось получить инфо о релизе для $repo" "error"
         return 1
     fi
 
-    # Ищем ссылку на zip-файл
     local asset_url
-    asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-linux-.*\.zip')
-
-    # Ищем tag_name, чтобы понять версию
+    asset_url="$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-linux-.*\.zip' || true)"
     local new_version
-    new_version=$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+')
-    # Текущая версия, если была
+    new_version="$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+' || true)"
     local current_version
-    current_version=$(get_current_version "$addon_name")
+    current_version="$(get_current_version "$addon_name")"
 
-    # Проверяем, есть ли новая версия
     if ! check_version "$addon_name" "$current_version" "$new_version"; then
-        # Если нет новой, выходим
         return 0
     fi
 
     if [ -z "$asset_url" ]; then
-        log_message "Не найдена подходящая ссылка на сборку Linux для $repo" "error"
+        log_message "Не найдена ссылка на linux-сборку для $repo" "error"
         return 1
     fi
 
-    # Скачиваем и распаковываем
     if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
-        # Копируем распакованное в addons
-        cp -r "$temp_dir/addons/." "$output_path" && \
-        # Обновляем info о версии
-        update_version_file "$addon_name" "$new_version" && \
-        log_message "Успешно обновлён $repo до версии $new_version" "success"
-        return 0
+        cp -r "$temp_dir/addons/." "$output_path"
+        update_version_file "$addon_name" "$new_version"
+        log_message "$addon_name обновлён до версии $new_version" "success"
     fi
-
-    return 1
 }
 
-# ===========================
-# Установка/обновление Metamod
-# ===========================
 update_metamod() {
-    # Если метамод не установлен
     if [ ! -d "$OUTPUT_DIR/metamod" ]; then
-        log_message "Metamod не установлен. Выполняем установку..." "running"
+        log_message "Metamod не установлен. Устанавливаем..." "running"
     fi
 
-    # Получаем ссылку на последний tar.gz
     local metamod_version
-    metamod_version=$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -1)
+    metamod_version="$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -n1 || true)"
     if [ -z "$metamod_version" ]; then
-        log_message "Не удалось получить версию Metamod" "error"
+        log_message "Не удалось определить последнюю версию Metamod" "error"
         return 1
     fi
 
     local full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_version"
-
-    # Из имени файла достаём gitXXXX
     local new_version
-    new_version=$(echo "$metamod_version" | grep -oP 'git\d+')
+    new_version="$(echo "$metamod_version" | grep -oP 'git\d+' || true)"
     local current_version
-    current_version=$(get_current_version "Metamod")
+    current_version="$(get_current_version "Metamod")"
 
     if ! check_version "Metamod" "$current_version" "$new_version"; then
         return 0
     fi
 
-    # Скачиваем и распаковываем
     if handle_download_and_extract "$full_url" "$TEMP_DIR/metamod.tar.gz" "$TEMP_DIR/metamod" "tar.gz"; then
-        # Копируем addons/metamod в $OUTPUT_DIR
-        cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/" && \
-        update_version_file "Metamod" "$new_version" && \
-        log_message "Metamod успешно обновлён до $new_version" "success"
-        return 0
+        cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/"
+        update_version_file "Metamod" "$new_version"
+        log_message "Metamod обновлён до $new_version" "success"
     fi
-
-    return 1
 }
 
-# ===========================
-# Обновление server.cfg (при необходимости)
-# ===========================
 update_server_cfg() {
-    log_message "Обновление конфигурационного файла сервера..." "running"
+    log_message "Обновление server.cfg..." "running"
 
-    ROOT_CFG="/servUpConfig.cfg"
-    SERVER_CFG="${GAME_DIRECTORY}/cfg/${CFG_FILE}"
+    local ROOT_CFG="/servUpConfig.cfg"
+    local SERVER_CFG="${GAME_DIRECTORY}/cfg/${CFG_FILE:-server.cfg}"
 
-    # Проверяем наличие файла-образца
     if [ ! -f "$ROOT_CFG" ]; then
-        log_message "Файл servUpConfig.cfg не найден. Пропускаем обновление конфигурации." "error"
+        log_message "servUpConfig.cfg не найден, пропускаем обновление." "error"
+        return
+    fi
+
+    if [ -f "$SERVER_CFG" ]; then
+        # Дописываем новые строки
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            local trimmed_line
+            trimmed_line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [[ -z "$trimmed_line" ]] && continue
+            [[ "$trimmed_line" =~ ^// ]] && continue
+
+            local first_word
+            first_word="$(echo "$trimmed_line" | awk '{print $1}')"
+            if ! grep -q "^$first_word\b" "$SERVER_CFG"; then
+                echo "$trimmed_line" >> "$SERVER_CFG"
+                log_message "Добавлена строка в server.cfg: $trimmed_line" "debug"
+            fi
+        done < "$ROOT_CFG"
     else
-        # Если server.cfg уже есть, добавим в него новые строки
-        if [ -f "$SERVER_CFG" ]; then
-            while IFS= read -r line || [[ -n "$line" ]]; do
-                # Убираем пробелы в начале/конце
-                trimmed_line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                # Пропускаем пустые и закомментированные строки
-                if [[ -n "$trimmed_line" && ! "$trimmed_line" =~ ^// ]]; then
-                    # Берём первое слово (команда)
-                    first_word=$(echo "$trimmed_line" | awk '{print $1}')
-                    # Если такой команды нет в server.cfg, добавляем
-                    if ! grep -q "^$first_word\b" "$SERVER_CFG"; then
-                        echo "$trimmed_line" >> "$SERVER_CFG"
-                        log_message "Добавлена строка в server.cfg: $trimmed_line" "success"
-                    fi
-                fi
-            done < "$ROOT_CFG"
-        else
-            # Если server.cfg нет вовсе, копируем целиком
-            cp "$ROOT_CFG" "$SERVER_CFG"
-            log_message "Создан $SERVER_CFG на основе servUpConfig.cfg." "success"
-        fi
+        cp "$ROOT_CFG" "$SERVER_CFG"
+        log_message "Создан $SERVER_CFG на основе servUpConfig.cfg" "success"
     fi
 }
 
-# ===========================
-# Инициализация server.cfg (если не существует)
-# ===========================
 initialize_server_cfg() {
-    ROOT_CFG="/servUpConfig.cfg"
-    SERVER_CFG="${GAME_DIRECTORY}/cfg/${CFG_FILE}"
+    local ROOT_CFG="/servUpConfig.cfg"
+    local SERVER_CFG="${GAME_DIRECTORY}/cfg/${CFG_FILE:-server.cfg}"
 
-    # Если server.cfg отсутствует или пуст, создаём
     if [ ! -f "$SERVER_CFG" ] || [ ! -s "$SERVER_CFG" ]; then
         log_message "Инициализация server.cfg..." "running"
         cp "$ROOT_CFG" "$SERVER_CFG"
         log_message "Создан $SERVER_CFG на основе servUpConfig.cfg." "success"
 
-        # Дополнительно заменяем некоторые строки (hostname, sv_tags)
         if [ -f "$SERVER_CFG" ]; then
-            sed -i "s/^hostname .*/hostname \"${HOST_NAME}\"/" "$SERVER_CFG"
-            sed -i "s/^sv_tags .*/sv_tags \"${SERVER_TAGS}\"/" "$SERVER_CFG"
+            sed -i "s/^hostname .*/hostname \"${HOST_NAME:-ServUp-CS2}\"/" "$SERVER_CFG"
+            sed -i "s/^sv_tags .*/sv_tags \"${SERVER_TAGS:-servup}\"/" "$SERVER_CFG"
         fi
     fi
 }
 
-# ===========================
-# Настройка Metamod в gameinfo.gi
-# ===========================
 configure_metamod() {
     local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
     local GAMEINFO_ENTRY="			Game	csgo/addons/metamod"
 
-    if [ -f "${GAMEINFO_FILE}" ]; then
-        # Проверяем, есть ли строка "Game   csgo/addons/metamod"
+    if [ -f "$GAMEINFO_FILE" ]; then
         if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then
-            # Используем awk, чтобы вставить новую строку после "Game_LowViolence"
             awk -v new_entry="$GAMEINFO_ENTRY" '
                 BEGIN { found=0; }
                 {
-                    if (found) {
-                        print new_entry;
-                        found=0;
+                    if (found == 1) {
+                        print new_entry
+                        found=0
                     }
-                    print;
+                    print $0
                 }
-                /Game_LowViolence/ { found=1; }
-            ' "$GAMEINFO_FILE" > "$GAMEINFO_FILE.tmp" && mv "$GAMEINFO_FILE.tmp" "$GAMEINFO_FILE"
+                /Game_LowViolence/ { found=1 }
+            ' "$GAMEINFO_FILE" > "${GAMEINFO_FILE}.tmp"
+
+            mv "${GAMEINFO_FILE}.tmp" "$GAMEINFO_FILE"
         fi
     fi
 }

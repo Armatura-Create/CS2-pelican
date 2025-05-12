@@ -1,13 +1,20 @@
 #!/bin/bash
+set -Eeuo pipefail
+
 source /utils/logging.sh
+trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
+
+# Глобальные ассоциативные массивы для шаблонов
+declare -gA EXACT_PATTERNS=()
+declare -gA REGEX_PATTERNS=()
 
 setup_message_filter() {
     if [ "${ENABLE_FILTER:-0}" != "1" ]; then
-        log_message "Фильтр отключен. Сообщения не будут заблокированы." "running"
+        log_message "Фильтр консоли отключён." "running"
         return 0
     fi
 
-    # Create default config if not exists
+    # Создаём дефолтный mute_messages.cfg, если он отсутствует
     if [ ! -f "/home/container/game/mute_messages.cfg" ]; then
         cat > "/home/container/game/mute_messages.cfg" <<'EOL'
 # Mute Messages Configuration File
@@ -18,52 +25,39 @@ setup_message_filter() {
 
 .*Certificate expires.*
 EOL
-        log_message "Создан дефолтный файл mute_messages.cfg" "running"
+        log_message "Создан дефолтный /home/container/game/mute_messages.cfg" "running"
     fi
 
-    # Pre-process patterns for better performance
-    # EXACT_PATTERNS:  cтроки, которые надо проверять "==" (полное совпадение)
-    # REGEX_PATTERNS:  строки, воспринимаемые как полноценные регулярки
-    declare -gA EXACT_PATTERNS=()
-    declare -gA REGEX_PATTERNS=()
-
-    # (Опционально) маскируем STEAM_ACC, если хотим скрывать его
+    # Если нужно маскировать STEAM_ACC, превращаем в «********»
     if [ -n "${STEAM_ACC:-}" ]; then
-        # Вместо блокировки — замена STEAM_ACC → "********"
         REGEX_PATTERNS["${STEAM_ACC}"]="********"
     fi
 
     local pattern_count=0
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
+        # Пропускаем комментарии / пустые
         [[ $line =~ ^[[:space:]]*# ]] && continue
         [[ -z "${line// }" ]] && continue
 
-        # Если строка начинается с @ — это exact-матч
         if [[ $line == @* ]]; then
-            # Убираем @
+            # Exact match
             local exact="${line#@}"
-            # Сохраняем как ключ exact => "1"
             EXACT_PATTERNS["$exact"]="1"
         else
-            # Это полноценный regex
+            # Regex
             REGEX_PATTERNS["$line"]="1"
         fi
-        ((pattern_count++))
+        pattern_count=$((pattern_count + 1))
     done < "/home/container/game/mute_messages.cfg"
 
-    log_message "Загружено $pattern_count шаблонов фильтров (${#EXACT_PATTERNS[@]} точные, ${#REGEX_PATTERNS[@]} регулярные выражения). Измените mute_messages.cfg, чтобы добавить больше." "running"
+    log_message "Фильтр сообщений активирован. Загрузлено $pattern_count шаблон(ов)." "running"
 }
 
 handle_server_output() {
     local line="$1"
-    # Early return for empty lines
-    [[ -z "$line" ]] && {
-        printf '%s\n' "$line"
-        return
-    }
+    [[ -z "$line" ]] && { printf '%s\n' "$line"; return; }
 
-    # Skip filtering if disabled
+    # Если фильтр отключён, просто выводим
     if [ "${ENABLE_FILTER:-0}" != "1" ]; then
         printf '%s\n' "$line"
         return
@@ -72,59 +66,41 @@ handle_server_output() {
     local blocked=false
     local modified_line="$line"
 
-    ###################################################
-    # 1) Exact match проверяем в первую очередь
-    ###################################################
+    # 1) Exact matchЫ
     for exact_pattern in "${!EXACT_PATTERNS[@]}"; do
         if [[ "$line" == "$exact_pattern" ]]; then
-            # Полностью блокируем
             blocked=true
             break
         fi
     done
 
-    ###################################################
-    # 2) Если не заблокировано exact-совпадением:
-    #    проходим по REGEX_PATTERNS
-    ###################################################
-    if [[ "$blocked" == false ]]; then
+    # 2) Regex-совпадения (если не заблокировано exact-совпадением)
+    if [ "$blocked" = false ]; then
         for regex in "${!REGEX_PATTERNS[@]}"; do
-            # Значение в массиве может быть либо "1" (значит блокировать),
-            # либо какая-то строка для замены. Сейчас для простоты оставим
-            # "1" = блок, любая другая = замена.
             local action="${REGEX_PATTERNS[$regex]}"
-
-            # Проверяем совпадение через =~
             if [[ "$line" =~ $regex ]]; then
                 if [[ "$action" == "1" ]]; then
-                    # Блокируем
+                    # Полный блок
                     blocked=true
                     break
                 else
-                    # Значит хотим заменить найденный фрагмент на $action
-                    # Для этого используем sed. Нужно аккуратно экранировать
-                    # спецсимволы в replacement (action).
+                    # Заменяем на action
                     local replacement
                     replacement="$(printf '%s' "$action" | sed 's/[&/\]/\\&/g')"
-                    # Заменяем все совпадения $regex на $replacement
-                    # '-E' чтобы понимать синтаксис расширенных регэксп
                     modified_line="$(printf '%s' "$modified_line" | sed -E "s/$regex/$replacement/g")"
                 fi
             fi
         done
     fi
 
-    ###################################################
-    # 3) Выводим результат
-    ###################################################
-    if [[ "$blocked" == true ]]; then
-        # Если включён превью-режим, пишем в лог заблокированную строку
+    # 3) Вывод
+    if [ "$blocked" = true ]; then
         if [ "${FILTER_PREVIEW_MODE:-0}" = "1" ]; then
-            log_message "Заблокированное сообщение: $line" "debug"
+            # В режиме превью показываем в логах, что строка заблокирована
+            log_message "Заблокированная строка (PREVIEW): $line" "debug"
         fi
-        # И ничего не выводим в консоль
+        # В консоль не выводим
     else
-        # Выводим либо заменённую строку, либо исходную
         printf '%s\n' "$modified_line"
     fi
 }

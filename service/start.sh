@@ -7,14 +7,14 @@ trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 if [ -f ".env" ]; then
     source ".env"
 else
-    log_message "Файл .env не найден. Сначала запустите install.sh" "error"
+    log_message "Файл .env не найден. Сначала запустите ./install.sh" "error"
     exit 1
 fi
 
 source "./utils/managerSteamCMD.sh"
 source "./utils/version.sh"
 
-# При первом запуске проверим, что SteamCMD и CS2-файлы вообще есть
+# Проверка, установлены ли SteamCMD и CS2-файлы
 check_initial_install() {
     if [ ! -f "${BASE_DIR:-/home/cs2_base}/server/steamcmd/steamcmd.sh" ] || [ ! -d "${BASE_DIR:-/home/cs2_base}/server/game/csgo" ]; then
         log_message "Выполняем первоначальную установку CS2..." "running"
@@ -31,27 +31,27 @@ main_loop() {
         local status=$?
         set -e
 
-        if [ $status -eq 200 ]; then
+        # 200 — есть новая версия
+        if [ "$status" -eq 200 ]; then
             UPDATE_IN_PROGRESS=1
 
-            # Обратный отсчёт и уведомление игроков — только на тех, что running
+            # Ждём N секунд, оповещаем игроков
             local cd_time="${UPDATE_COUNTDOWN_TIME:-300}"
-            log_message "Оповещаем игроков и ждём $cd_time сек. перед рестартом..." "running"
+            log_message "Оповещаем игроков и ждём $cd_time сек. перед перезапуском..." "running"
             inform_players_and_wait "$cd_time"
 
-            # Останавливаем только running сервера. Сохраняем их список
+            # Останавливаем сервера, которые были в состоянии running
             log_message "Останавливаем нужные сервера..." "running"
             local running_list
             running_list="$(stop_running_servers_for_update)"
 
-            # Ждём немного перед обновлением
             sleep 10
 
-            # Выполняем обновление через SteamCMD
+            # Обновляем CS2
             install_or_update
 
-            # Запускаем только те, что были running
-            log_message "Запускаем обратно сервера, которые были запущены..." "running"
+            # Запускаем обратно те, что были running
+            log_message "Запускаем обратно остановленные сервера..." "running"
             start_servers_with_delay "$running_list"
 
             UPDATE_IN_PROGRESS=0
@@ -62,5 +62,5 @@ main_loop() {
 }
 
 check_initial_install
-log_message "CS2 Updater запущен" "info"
+log_message "CS2 Updater запущен." "info"
 main_loop

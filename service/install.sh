@@ -5,20 +5,17 @@ source "./utils/logging.sh"
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 ########################################
-# Устанавливаем зависимости
+# Установка необходимых зависимостей
 ########################################
 install_dependencies() {
-    log_message "Устанавливаем системные зависимости..." "running"
-    # Для apt-based систем (Debian/Ubuntu)
+    log_message "Устанавливаем системные зависимости (apt)..." "running"
     sudo apt-get update -y
     sudo apt-get install -y curl jq unzip lib32gcc-s1 lib32stdc++6
-    log_message "Все необходимые зависимости установлены." "success"
+    log_message "Зависимости успешно установлены." "success"
 }
 
 ########################################
-# Спрашивает у пользователя значение,
-# пока не введёт непустую строку.
-# Usage: prompt_required VAR "Question?" "Error message"
+# Функция ввода (непустое)
 ########################################
 prompt_required() {
     local var_name="$1"
@@ -30,7 +27,6 @@ prompt_required() {
         if [ -z "$val" ]; then
             log_message "$error_msg" "error"
         else
-            # Записываем результат в нужную переменную
             eval "$var_name=\"$val\""
             break
         fi
@@ -38,9 +34,7 @@ prompt_required() {
 }
 
 ########################################
-# Спрашивает у пользователя значение,
-# если пусто, берёт default.
-# Usage: prompt_with_default VAR "Question?" "DefaultVal"
+# Функция ввода (по умолчанию)
 ########################################
 prompt_with_default() {
     local var_name="$1"
@@ -55,7 +49,7 @@ prompt_with_default() {
 }
 
 ########################################
-# Создание .env файла
+# Создание файла .env
 ########################################
 create_env_file() {
     cat <<EOF > .env
@@ -76,81 +70,65 @@ VERSION_CHECK_INTERVAL="$VERSION_CHECK_INTERVAL"
 UPDATE_COUNTDOWN_TIME="$UPDATE_COUNTDOWN_TIME"
 EOF
 
-    log_message ".env создан/обновлён" "success"
+    log_message ".env файл создан/обновлён." "success"
 }
 
 ########################################
-# Основная логика установки
+# Основной процесс установки
 ########################################
 main() {
-    log_message "Добро пожаловать в установщик CS2" "info"
+    log_message "Добро пожаловать в установщик CS2 Updater!" "info"
 
-    # 1. Ставим зависимости
+    # 1. Устанавливаем зависимости
     install_dependencies
 
-    # 2. Собираем переменные окружения
-    #    a) Пример: требуется непустое имя сервиса
+    # 2. Сбор значений
     prompt_required SERVICE_NAME \
         "Введите имя systemd-сервиса (например cs2.service):" \
         "Имя сервиса не может быть пустым!"
 
-    #    b) Путь BASE_DIR с дефолтом /home/cs2_base
     prompt_with_default BASE_DIR \
         "Укажите BASE_DIR" \
         "/home/cs2_base"
 
-    #    c) AppID с дефолтом 730
     prompt_with_default SRCDS_APPID \
         "AppID (SRCDS_APPID)" \
         "730"
 
-    #    d) Steam User (может быть пустым -> тогда anon)
     prompt_with_default STEAM_USER \
         "Steam User (STEAM_USER)" \
         "anonymous"
 
-    #    e) Steam Pass (может быть пустым)
-    read -rp "Steam Pass (STEAM_PASS), можно оставить пустым: " STEAM_PASS
+    read -rp "Steam Pass (STEAM_PASS) (можно пусто): " STEAM_PASS
+    read -rp "Steam Auth (STEAM_AUTH) (можно пусто): " STEAM_AUTH
+    read -rp "EXTRA_FLAGS (для SteamCMD, можно пусто): " EXTRA_FLAGS
 
-    #    f) Steam Auth (может быть пустым)
-    read -rp "Steam Auth (STEAM_AUTH), можно оставить пустым: " STEAM_AUTH
-
-    #    g) EXTRA_FLAGS (пусто — ок)
-    read -rp "EXTRA_FLAGS (для SteamCMD), можно оставить пустым: " EXTRA_FLAGS
-
-    #    h) Pelican URL (обязательное — предполагаем?)
     prompt_required PELICAN_URL \
-        "Pelican Application URL (PELICAN_URL) (например https://cp.armaturix.net):" \
+        "Pelican URL (например https://cp.armaturix.net):" \
         "PELICAN_URL не может быть пустым!"
 
-    #    i) Pelican App Token (обязательное)
     prompt_required PELICAN_APP_TOKEN \
-        "Pelican App Token (PELICAN_APP_TOKEN) (application API):" \
+        "Pelican App Token (application API):" \
         "PELICAN_APP_TOKEN не может быть пустым!"
 
-    #    j) Pelican Client Token (обязательное)
     prompt_required PELICAN_API_TOKEN \
-        "Pelican Client Token (PELICAN_API_TOKEN) (client API):" \
+        "Pelican Client Token (client API):" \
         "PELICAN_API_TOKEN не может быть пустым!"
 
-    #    k) Pelican образ
     prompt_with_default PELICAN_IMAGE \
-        "Pelican образ (PELICAN_IMAGE)" \
+        "Образ для Pelican (PELICAN_IMAGE)" \
         "docker.io/scrender/base-files-cs2:dev"
 
-    #    l) Pelican NODE ID (дефолт 1)
     prompt_with_default PELICAN_NODE_ID \
-        "Pelican NODE ID (PELICAN_NODE_ID)" \
+        "Pelican NODE ID" \
         "1"
 
-    #    m) VERSION_CHECK_INTERVAL
     prompt_with_default VERSION_CHECK_INTERVAL \
-        "Интервал проверки версии (сек) (VERSION_CHECK_INTERVAL)" \
+        "Интервал проверки версии (сек)" \
         "300"
 
-    #    n) UPDATE_COUNTDOWN_TIME
     prompt_with_default UPDATE_COUNTDOWN_TIME \
-        "Время отсчёта до рестарта (сек) (UPDATE_COUNTDOWN_TIME)" \
+        "Время отсчёта перед рестартом (сек)" \
         "300"
 
     # 3. Создаём .env
@@ -172,10 +150,11 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 "
+
     sudo systemctl daemon-reload
     sudo systemctl enable "$SERVICE_NAME"
 
-    log_message "Установка завершена. Запустите: sudo systemctl start $SERVICE_NAME" "success"
+    log_message "Установка завершена. Используйте 'sudo systemctl start $SERVICE_NAME' для запуска." "success"
 }
 
 main

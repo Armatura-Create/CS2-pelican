@@ -4,7 +4,6 @@ trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
 
-# Универсальная функция для установки или обновления CS2
 install_or_update() {
     local SRCDS_APPID="${SRCDS_APPID:-730}"
     local STEAM_USER="${STEAM_USER:-anonymous}"
@@ -26,7 +25,7 @@ install_or_update() {
                 break
             fi
             ((retry++))
-            log_message "Попытка загрузки SteamCMD #$retry провалилась, повтор..." "error"
+            log_message "Попытка загрузки SteamCMD #$retry провалилась, повтор через 5 секунд..." "error"
             sleep 5
         done
         if [ $retry -eq $max_retries ]; then
@@ -35,24 +34,24 @@ install_or_update() {
         fi
 
         tar -xzvf steamcmd.tar.gz -C "$BASE_DIR/server/steamcmd"
-        rm steamcmd.tar.gz
+        rm -f steamcmd.tar.gz
         chmod +x "$BASE_DIR/server/steamcmd/linux32/steamcmd"
-        apt update && apt install -y lib32gcc-s1 lib32stdc++6
+        sudo apt-get update -y
+        sudo apt-get install -y lib32gcc-s1 lib32stdc++6
     fi
 
-    log_message "Запускаем SteamCMD для установки/обновления CS2" "running"
+    log_message "Запускаем SteamCMD для установки/обновления CS2..." "running"
     "$BASE_DIR/server/steamcmd/steamcmd.sh" \
-      +force_install_dir "$BASE_DIR/server" \
-      +login "$STEAM_USER" "$STEAM_PASS" "$STEAM_AUTH" \
-      +app_update "$SRCDS_APPID" $EXTRA_FLAGS \
-      +quit
+        +force_install_dir "$BASE_DIR/server" \
+        +login "$STEAM_USER" "$STEAM_PASS" "$STEAM_AUTH" \
+        +app_update "$SRCDS_APPID" $EXTRA_FLAGS \
+        +quit
 
-    # Копируем библиотеки
     mkdir -p "$BASE_DIR/server/.steam/sdk32"
     cp -v "$BASE_DIR/server/steamcmd/linux32/steamclient.so" "$BASE_DIR/server/.steam/sdk32/" || true
 
     mkdir -p "$BASE_DIR/server/.steam/sdk64"
     cp -v "$BASE_DIR/server/steamcmd/linux64/steamclient.so" "$BASE_DIR/server/.steam/sdk64/" || true
 
-    log_message "Установка/обновление CS2 завершена." "success"
+    log_message "CS2 успешно установлена/обновлена." "success"
 }

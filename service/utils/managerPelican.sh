@@ -5,7 +5,7 @@ trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
 
 #####################################################
-# 1) Получаем список серверов по нужному image (application API)
+# 1) Получаем список серверов по image (application API)
 #####################################################
 get_servers_by_image_app() {
     local image_filter="${1:-}"
@@ -15,7 +15,7 @@ get_servers_by_image_app() {
     fi
 
     if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_APP_TOKEN:-}" ]; then
-        log_message "Не заданы PELICAN_URL или PELICAN_APP_TOKEN" "error"
+        log_message "Отсутствуют PELICAN_URL / PELICAN_APP_TOKEN" "error"
         return 1
     fi
 
@@ -24,12 +24,11 @@ get_servers_by_image_app() {
         return 1
     fi
 
-    # Получаем (per_page=100 — adjust при необходимости)
     local response
     response="$(curl -s -w "\n%{http_code}" \
-      -H "Authorization: Bearer $PELICAN_APP_TOKEN" \
-      -H "Accept: application/json" \
-      "${PELICAN_URL}/api/application/servers?per_page=100")"
+        -H "Authorization: Bearer $PELICAN_APP_TOKEN" \
+        -H "Accept: application/json" \
+        "${PELICAN_URL}/api/application/servers?per_page=100")"
 
     local body
     body="$(echo "$response" | head -n -1)"
@@ -42,7 +41,6 @@ get_servers_by_image_app() {
         return 1
     fi
 
-    # Фильтруем по image и node_id
     local server_ids
     server_ids="$(echo "$body" | jq -r \
         --arg IMG "$image_filter" \
@@ -64,7 +62,7 @@ get_servers_by_image_app() {
 }
 
 #####################################################
-# 2) Проверить, что сервер сейчас "running" (client API)
+# 2) Проверить, что сервер "running" (client API)
 #####################################################
 is_server_running_client() {
     local identifier="$1"
@@ -74,7 +72,7 @@ is_server_running_client() {
     fi
 
     if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_API_TOKEN:-}" ]; then
-        log_message "Не заданы PELICAN_URL или PELICAN_API_TOKEN" "error"
+        log_message "Отсутствуют PELICAN_URL / PELICAN_API_TOKEN" "error"
         return 1
     fi
 
@@ -99,13 +97,12 @@ is_server_running_client() {
     current_state="$(echo "$body" | jq -r '.attributes.current_state')"
     if [ "$current_state" = "running" ]; then
         return 0
-    else
-        return 1
     fi
+    return 1
 }
 
 #####################################################
-# 3) Собрать только те, что running + нужный image
+# 3) Список серверов running + нужный image
 #####################################################
 get_running_servers_by_image() {
     local image_filter="$1"
@@ -132,17 +129,17 @@ get_running_servers_by_image() {
 send_command() {
     local server_identifier="$1"
     local command="$2"
+
     if [ -z "$server_identifier" ] || [ -z "$command" ]; then
-        log_message "send_command: не заданы server_identifier или command" "error"
+        log_message "send_command: не указаны server_identifier или command" "error"
         return 1
     fi
 
     if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_API_TOKEN:-}" ]; then
-        log_message "Отсутствуют переменные PELICAN_URL или PELICAN_API_TOKEN" "error"
+        log_message "Отсутствуют PELICAN_URL / PELICAN_API_TOKEN" "error"
         return 1
     fi
 
-    # Проверим, что сервер действительно running (чтобы не слать команду впустую)
     if ! is_server_running_client "$server_identifier"; then
         log_message "Сервер $server_identifier не в статусе running. Пропускаем команду [$command]." "debug"
         return 0
@@ -152,7 +149,7 @@ send_command() {
     response="$(curl -s -w "\n%{http_code}" -X POST \
       -H "Authorization: Bearer $PELICAN_API_TOKEN" \
       -H "Content-Type: application/json" \
-      --data "{\"command\": \"$command\"}" \
+      --data "{\"command\":\"$command\"}" \
       "${PELICAN_URL}/api/client/servers/$server_identifier/command")"
 
     local body
@@ -161,7 +158,7 @@ send_command() {
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Не удалось отправить команду ($command) на сервер $server_identifier, HTTP $http_code" "error"
+        log_message "Ошибка отправки команды ($command) на сервер $server_identifier, HTTP $http_code" "error"
         log_message "Ответ: $body" "debug"
         return 1
     fi
@@ -175,27 +172,23 @@ send_command() {
 power_action() {
     local server_identifier="$1"
     local action="$2"
-    if [ -z "$server_identifier" ] || [ -z "$action" ]; then
-        log_message "power_action: не заданы server_identifier или action" "error"
-        return 1
-    fi
 
     local valid_signals=("start" "stop" "restart" "kill")
     if [[ ! " ${valid_signals[*]} " =~ " ${action} " ]]; then
-        log_message "Недопустимый сигнал power_action: $action" "error"
+        log_message "Недопустимый сигнал: $action" "error"
         return 1
     fi
 
     if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_API_TOKEN:-}" ]; then
-        log_message "Отсутствуют переменные PELICAN_URL или PELICAN_API_TOKEN" "error"
+        log_message "Отсутствуют PELICAN_URL / PELICAN_API_TOKEN" "error"
         return 1
     fi
 
     local response
     response="$(curl -s -w "\n%{http_code}" \
       "${PELICAN_URL}/api/client/servers/$server_identifier/power" \
-      -H 'Accept: application/json' \
-      -H 'Content-Type: application/json' \
+      -H "Accept: application/json" \
+      -H "Content-Type: application/json" \
       -H "Authorization: Bearer $PELICAN_API_TOKEN" \
       -X POST \
       -d "{\"signal\": \"$action\"}")"
@@ -206,10 +199,10 @@ power_action() {
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Сбой power_action '$action' на сервере $server_identifier, HTTP $http_code" "error"
+        log_message "Сбой power_action '$action' на сервере $server_identifier (HTTP $http_code)" "error"
         log_message "Ответ: $body" "debug"
         return 1
     fi
 
-    log_message "Выполнен power_action [$action] на сервер $server_identifier" "debug"
+    log_message "Выполнен power_action [$action] на сервере $server_identifier" "debug"
 }
