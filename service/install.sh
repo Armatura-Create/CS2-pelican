@@ -68,6 +68,9 @@ PELICAN_NODE_ID="$PELICAN_NODE_ID"
 
 VERSION_CHECK_INTERVAL="$VERSION_CHECK_INTERVAL"
 UPDATE_COUNTDOWN_TIME="$UPDATE_COUNTDOWN_TIME"
+
+LOG_LEVEL="$LOG_LEVEL"
+LOG_FILE_ENABLED="$LOG_FILE_ENABLED"
 EOF
 
     log_message ".env файл создан/обновлён." "success"
@@ -131,10 +134,19 @@ main() {
         "Время отсчёта перед рестартом (сек)" \
         "300"
 
-    # 3. Создаём .env
+    # 3. **Новые настройки логирования**
+    prompt_with_default LOG_LEVEL \
+        "Укажите уровень логирования (DEBUG/INFO/WARNING/ERROR)" \
+        "INFO"
+
+    prompt_with_default LOG_FILE_ENABLED \
+        "Включить лог в файл (1 - да, 0 - нет)" \
+        "0"
+
+    # 4. Создаём .env
     create_env_file
 
-    # 4. Создаём systemd unit
+    # 5. Создаём systemd unit
     sudo bash -c "cat <<EOF > /etc/systemd/system/\$SERVICE_NAME
 [Unit]
 Description=CS2 Updater Service
