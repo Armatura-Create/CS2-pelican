@@ -27,6 +27,10 @@ copy_bin() {
         "$BASE_FILES/game/bin/" \
         "$CONTAINER_FILES/game/bin/"
 
+    rsync -av --ignore-existing \
+        "$BASE_FILES/steamapps/" \
+        "$CONTAINER_FILES/steamapps/"
+
     log_message "Копирование bin завершено." "success"
 }
 
@@ -57,6 +61,10 @@ create_symlinks() {
             continue
         fi
         if [[ $file == "$BASE_FILES/game/csgo/cfg/"* ]]; then
+            continue
+        fi
+
+        if [[ $file == "$BASE_FILES/steamapps/"* ]]; then
             continue
         fi
 
@@ -113,7 +121,17 @@ remove_stale_symlinks() {
 get_current_version() {
     local addon="$1"
     if [ -f "$VERSION_FILE" ]; then
-        grep "^$addon=" "$VERSION_FILE" | cut -d'=' -f2
+        # Сохраняем результат grep в переменную line.
+        # Если не найдено, то line будет пустой.
+        local line
+        line="$(grep "^$addon=" "$VERSION_FILE" || true)"
+
+        if [ -n "$line" ]; then
+            # Отрезаем всё до знака '='
+            echo "${line#*=}"
+        else
+            echo ""
+        fi
     else
         echo ""
     fi
