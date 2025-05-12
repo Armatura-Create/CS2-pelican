@@ -67,14 +67,26 @@ create_symlinks() {
         mkdir -p "$(dirname "$symlink_path")"
 
         if [ ! -L "$symlink_path" ]; then
-            ln -s "$file" "$symlink_path" 2>/dev/null || {
-                log_message "Не удалось создать ссылку: $symlink_path -> $file" "warning"
-                # Пытаемся удалить и повторить
+            ln -s "$file" "$symlink_path" && {
+                log_message "Создана символическая ссылка: $symlink_path -> $file" "running"
+            } || {
+                # Если не удалось, пробуем удалить существующий файл и повторить
+                log_message "Не удалось создать ссылку: $symlink_path -> $file. Пытаемся удалить существующий файл или ссылку..." "warning"
                 if [ -e "$symlink_path" ]; then
-                    rm -f "$symlink_path"
-                    ln -s "$file" "$symlink_path" || {
-                        log_message "Повторное создание ссылки не удалось: $symlink_path -> $file" "error"
+                    rm -f "$symlink_path" && {
+                        log_message "Удалён существующий файл или ссылка: $symlink_path" "running"
+                        # Повторная попытка
+                        ln -s "$file" "$symlink_path" && {
+                            log_message "Символьная ссылка создана повторно: $symlink_path -> $file" "success"
+                        } || {
+                            log_message "Повторное создание ссылки не удалось: $symlink_path -> $file" "error"
+                        }
+                    } || {
+                        log_message "Не удалось удалить существующий файл или ссылку: $symlink_path" "error"
                     }
+                else
+                    # Если файла/ссылки там нет, возможно недостаточно прав или иная ошибка
+                    log_message "Файл/ссылка отсутствуют, но создать ссылку всё равно не удалось: $symlink_path -> $file" "error"
                 fi
             }
         fi

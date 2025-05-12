@@ -67,17 +67,17 @@ log_message() {
 
     case "$type" in
         running)
-            printf "%b%s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
+            printf "%b[RUNNING] %s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
         error)
-            printf "%b%s%b\n" "${PREFIX}${RED}" "$message" "${NC}" ;;
+            printf "%b[ERROR] %s%b\n" "${PREFIX}${RED}" "$message" "${NC}" ;;
         success)
-            printf "%b%s%b\n" "${PREFIX}${GREEN}" "$message" "${NC}" ;;
+            printf "%b[SUCCESS] %s%b\n" "${PREFIX}${GREEN}" "$message" "${NC}" ;;
         warning)
             printf "%b[WARNING] %s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
         debug)
             printf "%b[DEBUG] %s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
         info|*)
-            printf "%b%s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
+            printf "%b[INFO] %s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
     esac
 
     if [[ "$LOG_FILE_ENABLED" == "1" ]]; then
@@ -96,11 +96,6 @@ handle_error() {
             log_message "Команда не найдена: $last_command" "error"
             ;;
         *)
-            # Не логируем дубли, если это eval ${STEAMCMD}
-            # if [[ "$last_command" != *"eval ${STEAMCMD}"* ]]; then
-            #     log_message "Ошибка в строке $line_number: $last_command (exit code $exit_code)" "error"
-            # fi
-            # ;;
             log_message "Ошибка в строке $line_number: $last_command" "error"
             log_message "Код выхода: $exit_code" "error"
             ;;
