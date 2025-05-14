@@ -10,6 +10,7 @@ NC='\033[0m'
 
 PREFIX="${YELLOW}[CS2]${WHITE} > "
 
+# Уровни логов
 declare -A log_levels=(
     ["debug"]=0
     ["info"]=1
@@ -19,10 +20,13 @@ declare -A log_levels=(
     ["success"]=1
 )
 
+# Настройки логирования (читаем из .env)
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
-LOG_FILE_ENABLED="${LOG_FILE_ENABLED:-0}"
-LOG_FILE="${LOG_FILE:-./egg.log}"
-LOG_RETENTION_HOURS="${LOG_RETENTION_HOURS:-48}"
+LOG_FILE_ENABLED="${LOG_FILE_ENABLED:-1}"  # По умолч. включаем
+# Пример: Base_file_log.txt-2025-05-14
+# Чтобы держать файлы до 7 дней
+LOG_FILE_BASENAME="Base_file_log.txt"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 
 get_level_priority() {
     case "${LOG_LEVEL^^}" in
@@ -35,18 +39,26 @@ get_level_priority() {
 }
 LOG_LEVEL_PRIORITY="$(get_level_priority)"
 
+# Получаем имя лога вида Base_file_log.txt-YYYY-MM-DD
+get_log_filename_for_today() {
+    local date_part
+    date_part="$(date '+%Y-%m-%d')"
+    echo "${LOG_FILE_BASENAME}-${date_part}"
+}
+
+# Очистка логов старше N дней
 clean_old_logs() {
     [[ "$LOG_FILE_ENABLED" == "1" ]] || return 0
 
-    local log_dir
-    log_dir="$(dirname "$LOG_FILE")"
-    local log_name
-    log_name="$(basename "$LOG_FILE")"
+    local log_dir="./logs"  # например, храним логи в ./logs
+    mkdir -p "$log_dir"
 
-    if [[ -d "$log_dir" ]]; then
-        find "$log_dir" -name "${log_name}*" -type f -mmin "+$((LOG_RETENTION_HOURS * 60))" -delete 2>/dev/null || true
-    fi
+    # Удаляем файлы Base_file_log.txt-YYYY-MM-DD старше LOG_RETENTION_DAYS
+    find "$log_dir" -name "${LOG_FILE_BASENAME}-*" -type f -mtime "+$LOG_RETENTION_DAYS" -exec rm -f {} \; 2>/dev/null || true
 }
+
+# При первом источнике скрипта чистим старые логи
+clean_old_logs
 
 log_message() {
     local message="$1"
@@ -74,8 +86,13 @@ log_message() {
             >&2 printf "%b%s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
     esac
 
+    # Пишем в файл, если включено
     if [[ "$LOG_FILE_ENABLED" == "1" ]]; then
-        echo "[$timestamp] [$type] $message" >> "$LOG_FILE"
+        local log_dir="./logs"
+        mkdir -p "$log_dir"
+        local logfile="$log_dir/$(get_log_filename_for_today)"
+
+        echo "[$timestamp] [$type] $message" >> "$logfile"
     fi
 }
 
@@ -84,7 +101,7 @@ handle_error() {
     local line_number="${1:-}"
     local last_command="${2:-$BASH_COMMAND}"
 
-    # Эти коды можем пропускать, если нужно
+    # Если хотим пропускать коды 200,404,500, оставляем
     if [[ "$exit_code" -eq 200 || "$exit_code" -eq 404 || "$exit_code" -eq 500 ]]; then
         return "$exit_code"
     fi

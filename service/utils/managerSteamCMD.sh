@@ -13,10 +13,10 @@ install_or_update() {
     local BASE_DIR="${BASE_DIR:-/home/cs2_base}"
     local STEAMCMD_URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
 
+    # Проверка наличия steamcmd.sh
     if [ ! -f "$BASE_DIR/server/steamcmd/steamcmd.sh" ]; then
         log_message "Устанавливаем SteamCMD..." "running"
-        mkdir -p "$BASE_DIR/server/steamcmd"
-        mkdir -p "$BASE_DIR/server/steamapps"
+        mkdir -p "$BASE_DIR/server/steamcmd" "$BASE_DIR/server/steamapps"
 
         local max_retries=3
         local retry=0
@@ -25,7 +25,7 @@ install_or_update() {
                 break
             fi
             ((retry++))
-            log_message "Попытка загрузки SteamCMD #$retry провалилась, повтор через 5 секунд..." "error"
+            log_message "Попытка загрузки SteamCMD #$retry провалилась, повтор..." "error"
             sleep 5
         done
         if [ $retry -eq $max_retries ]; then
@@ -36,6 +36,7 @@ install_or_update() {
         tar -xzvf steamcmd.tar.gz -C "$BASE_DIR/server/steamcmd"
         rm -f steamcmd.tar.gz
         chmod +x "$BASE_DIR/server/steamcmd/linux32/steamcmd"
+        # Ставим 32-битные библиотеки
         sudo apt-get update -y
         sudo apt-get install -y lib32gcc-s1 lib32stdc++6
     fi
@@ -46,7 +47,14 @@ install_or_update() {
         +login "$STEAM_USER" "$STEAM_PASS" "$STEAM_AUTH" \
         +app_update "$SRCDS_APPID" $EXTRA_FLAGS \
         +quit
+    local sc_exit=$?
+    if [ "$sc_exit" -ne 0 ]; then
+        # Если SteamCMD вернул не 0, логируем ошибку
+        log_message "SteamCMD завершился с кодом $sc_exit. Возможные проблемы: недоступен Steam, неправильные креды, недостаточно места..." "error"
+        return "$sc_exit"
+    fi
 
+    # Копируем steamclient.so
     mkdir -p "$BASE_DIR/server/.steam/sdk32"
     cp -v "$BASE_DIR/server/steamcmd/linux32/steamclient.so" "$BASE_DIR/server/.steam/sdk32/" || true
 

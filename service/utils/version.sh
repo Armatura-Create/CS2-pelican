@@ -11,6 +11,7 @@ get_game_version() {
     local steam_inf="${BASE_DIR:-/home/cs2_base}/server/game/csgo/steam.inf"
     if [ -f "$steam_inf" ]; then
         local patch_version
+        # grep "PatchVersion=" | cut -f2
         patch_version="$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2 || true)"
         echo "${patch_version//./}"
     else
@@ -19,7 +20,7 @@ get_game_version() {
 }
 
 check_server_version() {
-    # Если обновление уже идёт
+    # 1) Если обновление уже идёт
     if [ "$UPDATE_IN_PROGRESS" -eq 1 ]; then
         return 0
     fi
@@ -84,8 +85,10 @@ inform_players_and_wait() {
     local start_time
     start_time="$(date +%s)"
 
+    # Берём список серверов, которые running
     local servers
-    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-docker.io/scrender/base-files-cs2:latest}")"
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-}")"
+    # Если переменная не задана, будет ошибка => лучше в .env всегда задавать PELICAN_IMAGE
 
     while IFS=' ' read -r seconds message || [ -n "$seconds" ]; do
         [[ "$seconds" =~ ^[0-9]+$ ]] || continue
@@ -102,7 +105,6 @@ inform_players_and_wait() {
             sleep "$wait_time"
         fi
 
-        # Шлём команду на все ещё running сервера
         if [ -n "$servers" ]; then
             while IFS= read -r srv_id; do
                 send_command "$srv_id" "say $message"
@@ -120,8 +122,10 @@ inform_players_and_wait() {
 }
 
 stop_running_servers_for_update() {
+    # Останавливаем сервера, которые сейчас running
+    # Исп. тот же PELICAN_IMAGE
     local servers
-    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-docker.io/scrender/base-files-cs2:dev}")"
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-}")"
     if [ -z "$servers" ]; then
         echo ""
         return 0

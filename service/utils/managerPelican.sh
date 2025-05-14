@@ -4,9 +4,9 @@ trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
 
-#####################################################
-# 1) Получаем список серверов по image (application API)
-#####################################################
+# ВАЖНО: теперь используем PELICAN_IMAGE без дефолта "dev" или "latest"
+# Чтобы не возникало ситуаций, что stop ищет одни, а start ищет другие.
+
 get_servers_by_image_app() {
     local image_filter="${1:-}"
     if [ -z "$image_filter" ]; then
@@ -61,9 +61,6 @@ get_servers_by_image_app() {
     echo "$server_ids"
 }
 
-#####################################################
-# 2) Проверить, что сервер "running" (client API)
-#####################################################
 is_server_running_client() {
     local identifier="$1"
     if [ -z "$identifier" ]; then
@@ -101,11 +98,13 @@ is_server_running_client() {
     return 1
 }
 
-#####################################################
-# 3) Список серверов running + нужный image
-#####################################################
 get_running_servers_by_image() {
     local image_filter="$1"
+    if [ -z "$image_filter" ]; then
+        log_message "get_running_servers_by_image: не указан image_filter" "error"
+        return 1
+    fi
+
     local all_servers
     all_servers="$(get_servers_by_image_app "$image_filter")" || return 1
     if [ -z "$all_servers" ]; then
@@ -123,9 +122,6 @@ get_running_servers_by_image() {
     echo "$running_list"
 }
 
-#####################################################
-# 4) Отправка команды (client API)
-#####################################################
 send_command() {
     local server_identifier="$1"
     local command="$2"
@@ -140,6 +136,7 @@ send_command() {
         return 1
     fi
 
+    # Доп. проверка: сервер запущен?
     if ! is_server_running_client "$server_identifier"; then
         log_message "Сервер $server_identifier не в статусе running. Пропускаем команду [$command]." "debug"
         return 0
@@ -158,7 +155,7 @@ send_command() {
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Ошибка отправки команды ($command) на сервер $server_identifier, HTTP $http_code" "error"
+        log_message "Ошибка отправки команды [$command] на сервер $server_identifier, HTTP $http_code" "error"
         log_message "Ответ: $body" "debug"
         return 1
     fi
@@ -166,16 +163,13 @@ send_command() {
     log_message "Отправлена команда [$command] на сервер $server_identifier" "debug"
 }
 
-#####################################################
-# 5) Power-экшен (start, stop, restart, kill)
-#####################################################
 power_action() {
     local server_identifier="$1"
     local action="$2"
-
     local valid_signals=("start" "stop" "restart" "kill")
+
     if [[ ! " ${valid_signals[*]} " =~ " ${action} " ]]; then
-        log_message "Недопустимый сигнал: $action" "error"
+        log_message "Недопустимый сигнал power_action: $action" "error"
         return 1
     fi
 

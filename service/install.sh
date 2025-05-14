@@ -82,10 +82,10 @@ EOF
 main() {
     log_message "Добро пожаловать в установщик CS2 Updater!" "info"
 
-    # 1. Устанавливаем зависимости
+    # 1) Устанавливаем зависимости
     install_dependencies
 
-    # 2. Сбор значений
+    # 2) Сбор значений
     prompt_required SERVICE_NAME \
         "Введите имя systemd-сервиса (например cs2.service):" \
         "Имя сервиса не может быть пустым!"
@@ -120,7 +120,7 @@ main() {
 
     prompt_with_default PELICAN_IMAGE \
         "Образ для Pelican (PELICAN_IMAGE)" \
-        "docker.io/scrender/base-files-cs2:dev"
+        "docker.io/scrender/base-files-cs2:latest"
 
     prompt_with_default PELICAN_NODE_ID \
         "Pelican NODE ID" \
@@ -134,19 +134,18 @@ main() {
         "Время отсчёта перед рестартом (сек)" \
         "300"
 
-    # 3. **Новые настройки логирования**
+    # Параметры логирования
     prompt_with_default LOG_LEVEL \
         "Укажите уровень логирования (DEBUG/INFO/WARNING/ERROR)" \
         "INFO"
-
     prompt_with_default LOG_FILE_ENABLED \
-        "Включить лог в файл (1 - да, 0 - нет)" \
-        "0"
+        "Включить лог в файл? (1 - да, 0 - нет)" \
+        "1"
 
-    # 4. Создаём .env
+    # 3) Создаём .env
     create_env_file
 
-    # 5. Создаём systemd unit
+    # 4) Создаём systemd unit
     sudo bash -c "cat <<EOF > /etc/systemd/system/\$SERVICE_NAME
 [Unit]
 Description=CS2 Updater Service
