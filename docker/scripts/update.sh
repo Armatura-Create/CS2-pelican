@@ -293,8 +293,8 @@ update_metamod() {
     local metamod_version
     metamod_version="$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -n1 || true)"
     if [ -z "$metamod_version" ]; then
-        log_message "Не удалось определить последнюю версию Metamod" "error"
-        return 1
+        log_message "Не удалось определить последнюю версию Metamod - Обновите вручную при необходимости" "error"
+        return 0
     fi
 
     local full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_version"
