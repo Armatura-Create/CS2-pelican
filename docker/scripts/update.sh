@@ -274,8 +274,8 @@ update_addon() {
     fi
 
     if [ -z "$asset_url" ]; then
-        log_message "Не найдена ссылка на linux-сборку для $repo" "error"
-        return 1
+        log_message "Не найдена ссылка на linux-сборку для $repo. Обновите вручную" "error"
+        return 0
     fi
 
     if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
@@ -290,27 +290,69 @@ update_metamod() {
         log_message "Metamod не установлен. Устанавливаем..." "running"
     fi
 
-    local metamod_version
-    metamod_version="$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -n1 || true)"
-    if [ -z "$metamod_version" ]; then
-        log_message "Не удалось определить последнюю версию Metamod - Обновите вручную при необходимости" "error"
+    local branch="${1:-master}"  # stable/dev/master
+    local page file_name url_primary tmp_tar current_version new_version
+    tmp_tar="$TEMP_DIR/metamod.tar.gz"
+
+    # 1) Страница загрузок
+    local downloads_page="https://www.metamodsource.net/downloads.php?branch=${branch}"
+    page="$(curl -fsSL "$downloads_page" || true)"
+    if [ -z "$page" ]; then
+        log_message "Страница загрузок недоступна: ${downloads_page}" "error"
         return 0
     fi
 
-    local full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_version"
-    local new_version
-    new_version="$(echo "$metamod_version" | grep -oP 'git\d+' || true)"
-    local current_version
-    current_version="$(get_current_version "Metamod")"
+    # 2) Парсим все linux-архивы и берём с максимальным gitNNNN
+    file_name="$(
+        printf '%s' "$page" \
+        | grep -oE 'mmsource-[^"]*-linux\.tar\.gz' \
+        | tr -d '\r' \
+        | awk '{fn=$0; if (match($0,/git[0-9]+/)) {g=substr($0,RSTART+3,RLENGTH-3); print g" "fn}}' \
+        | sort -nr | head -n1 | awk '{ $1=""; sub(/^ /,""); print }'
+    )"
 
+    if [ -z "$file_name" ]; then
+        log_message "Не удалось найти ссылку на linux-архив на странице ${downloads_page}" "error"
+        return 0
+    fi
+
+    # 3) Версия и URL только с зеркала
+    new_version="$(echo "$file_name" | grep -oE 'git[0-9]+' | tr -d '\r' || true)"
+    if [ -z "$new_version" ]; then
+        log_message "Не удалось распознать номер билда из имени: $file_name" "error"
+        return 0
+    fi
+
+    url_primary="https://www.sourcemm.net/mmsdrop/2.0/${file_name}"
+    url_primary="$(printf '%s' "$url_primary" | tr -d '\r' | xargs)"
+    file_name="$(printf '%s' "$file_name" | xargs)"
+
+    current_version="$(get_current_version "Metamod")"
     if ! check_version "Metamod" "$current_version" "$new_version"; then
         return 0
     fi
 
-    if handle_download_and_extract "$full_url" "$TEMP_DIR/metamod.tar.gz" "$TEMP_DIR/metamod" "tar.gz"; then
-        cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/"
+    log_message "Новая версия для Metamod: ${new_version} (файл: ${file_name})" "running"
+    log_message "url_primary=[$url_primary]" "running"
+
+    # 4) Скачиваем и распаковываем через твой helper (ВАЖНО: порядок аргументов)
+    mkdir -p "$TEMP_DIR"
+    rm -f "$tmp_tar"
+    rm -rf "$TEMP_DIR/metamod"
+
+    if handle_download_and_extract "$url_primary" "$tmp_tar" "$TEMP_DIR/metamod" "tar.gz"; then
+        # 5) Копируем addons/ (иногда архив кладёт в корень, иногда — в подпапку)
+        local addons_src
+        addons_src="$(find "$TEMP_DIR/metamod" -maxdepth 2 -type d -path '*/addons' | head -n1)"
+        if [ -z "$addons_src" ]; then
+            log_message "Не нашли папку addons/ после распаковки" "error"
+            return 1
+        fi
+        cp -rf "$addons_src/." "$OUTPUT_DIR/"
         update_version_file "Metamod" "$new_version"
         log_message "Metamod обновлён до $new_version" "success"
+    else
+        log_message "Не удалось скачать/распаковать Metamod" "error"
     fi
 }
 

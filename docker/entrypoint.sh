@@ -10,6 +10,31 @@ source /scripts/filter.sh     # Логика фильтрации вывода (
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 # ============================
+# DEBUG: Вывод переменных окружения
+# ============================
+if [ "${LOG_LEVEL:-INFO}" = "DEBUG" ]; then
+    log_message "=== DEBUG MODE: Вывод всех переменных окружения ===" "debug"
+    log_message "────────────────────────────────────────────────────" "debug"
+    
+    # Сортируем и выводим все переменные окружения
+    while IFS='=' read -r name value; do
+        # Маскируем чувствительные данные
+        case "$name" in
+            *PASSWORD*|*TOKEN*|*SECRET*|*KEY*|STEAM_ACC|RCON_PASSWORD)
+                log_message "  $name=********" "debug"
+                ;;
+            *)
+                log_message "  $name=$value" "debug"
+                ;;
+        esac
+    done < <(env | sort)
+    
+    log_message "────────────────────────────────────────────────────" "debug"
+    log_message "=== Конец вывода переменных окружения ===" "debug"
+    log_message "" "debug"
+fi
+
+# ============================
 # 1) Базовая инициализация
 # ============================
 create_symlinks
