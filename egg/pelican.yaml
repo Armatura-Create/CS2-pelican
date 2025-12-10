@@ -3,9 +3,9 @@ meta:
   version: PLCN_v3
   update_url: null
 exported_at: '2025-12-10T09:12:53+00:00'
-name: 'CS2 with base files (TEST)'
+name: 'CS2 with base files'
 author: alext303@gmail.com
-uuid: 8b13111c-416e-410d-aab3-95ce397592f9
+uuid: 7d6ee663-9f1f-416b-bed2-75c999d4c0c3
 description: |-
   Egg for start server with one instance game files
   Create mount 
