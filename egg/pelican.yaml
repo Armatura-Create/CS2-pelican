@@ -2,10 +2,9 @@ _comment: 'DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL'
 meta:
   version: PLCN_v3
   update_url: null
-exported_at: '2025-12-10T09:12:53+00:00'
-name: 'CS2 with base files'
+exported_at: '2025-12-11T09:14:57+00:00'
+name: 'CS2 with base files (SwiftlyS2)'
 author: alext303@gmail.com
-uuid: 7d6ee663-9f1f-416b-bed2-75c999d4c0c3
 description: |-
   Egg for start server with one instance game files
   Create mount 
@@ -51,7 +50,7 @@ variables:
       Включить / отключить ботов на вашем сервере. По
       умолчанию эта опция включена.
     env_variable: BOTS_ENABLED
-    default_value: true
+    default_value: 1
     user_viewable: true
     user_editable: true
     rules:
@@ -74,7 +73,7 @@ variables:
       Автоматически очищает логи через 72 часа, файлы демо
       через 7 дней и резервные копии раундов через 24 часа.
     env_variable: CLEANUP_ENABLED
-    default_value: true
+    default_value: 1
     user_viewable: true
     user_editable: true
     rules:
@@ -87,7 +86,20 @@ variables:
       CounterStrikeSharp при каждом запуске сервера. Link:
       https://github.com/roflmuffin/CounterStrikeSharp
     env_variable: CSS_AUTOUPDATE
-    default_value: true
+    default_value: 1
+    user_viewable: true
+    user_editable: true
+    rules:
+      - boolean
+  -
+    sort: 0
+    name: 'Auto Update - Swiftly'
+    description: |-
+      Включить или отключить автоматическое обновление
+      Swiftly (SwiftlyS2) при каждом запуске сервера. Link:
+      https://github.com/swiftly-solution/swiftlys2
+    env_variable: SWIFTLY_AUTOUPDATE
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -112,7 +124,7 @@ variables:
       Включить режим отладки. ЕСЛИ ВЫ НЕ ЗНАЕТЕ, ДЛЯ ЧЕГО ЭТО
       НУЖНО, НЕ ВКЛЮЧАЙТЕ!
     env_variable: DEBUG
-    default_value: false
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -125,7 +137,7 @@ variables:
       определенные сообщения. Настройте его с помощью файла
       '/game/mute_messages.cfg', если включено.
     env_variable: ENABLE_FILTER
-    default_value: false
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -140,7 +152,7 @@ variables:
       сообщения отображаются красным цветом, что позволяет
       вам проверить конфигурацию фильтра.
     env_variable: FILTER_PREVIEW_MODE
-    default_value: false
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -195,7 +207,7 @@ variables:
       Записывайте сообщения Egg в /egg.log, где они хранятся в
       течение 48 часов.
     env_variable: LOG_FILE_ENABLED
-    default_value: false
+    default_value: 0
     user_viewable: false
     user_editable: false
     rules:
@@ -233,7 +245,7 @@ variables:
       при каждом запуске сервера. Link:
       https://www.metamodsource.net/downloads.php/?branch=master
     env_variable: METAMOD_AUTOUPDATE
-    default_value: true
+    default_value: 1
     user_viewable: true
     user_editable: true
     rules:
@@ -246,7 +258,7 @@ variables:
       внешними инструментами. По умолчанию эта опция
       отключена.
     env_variable: RCON_ENABLED
-    default_value: false
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -356,7 +368,7 @@ variables:
     name: 'TV Enabled'
     description: ''
     env_variable: TV_ENABLED
-    default_value: false
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -388,7 +400,7 @@ variables:
     name: 'Config file updater'
     description: 'Обновляем файл конфигурации если нужно'
     env_variable: UPDATE_CFG_FILE
-    default_value: false
+    default_value: 0
     user_viewable: true
     user_editable: true
     rules:
@@ -400,7 +412,7 @@ variables:
       Включить или отключить Valve Anti-Cheat на вашем сервере. По
       умолчанию — Включено.
     env_variable: VAC_ENABLED
-    default_value: true
+    default_value: 1
     user_viewable: true
     user_editable: true
     rules:

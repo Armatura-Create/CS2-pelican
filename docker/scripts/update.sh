@@ -16,6 +16,29 @@ ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
 VERSION_FILE="./game/versions.txt"
 
 # ===========================
+# Конфигурация типов аддонов
+# ===========================
+
+# Объявляем ассоциативные массивы для конфигурации
+declare -A ADDON_FILE_PATTERNS=(
+    ["css"]="counterstrikesharp-with-runtime-linux-.*\.zip"
+    ["swiftly"]="swiftlys2-linux-v.*-with-runtimes\.zip"
+    ["modsharp"]="modsharp.*linux\.zip"
+)
+
+declare -A ADDON_GAMEINFO_DIRS=(
+    ["css"]=""                    # CSS не добавляется в gameinfo.gi
+    ["swiftly"]="swiftlys2"       # Swiftly добавляется как csgo/addons/swiftlys2
+    ["modsharp"]="modsharp"       # ModSharp добавляется как csgo/addons/modsharp
+)
+
+declare -A ADDON_REQUIRES_METAMOD=(
+    ["css"]="1"        # CSS требует MetaMod
+    ["swiftly"]="0"    # Swiftly standalone
+    ["modsharp"]="0"   # ModSharp standalone
+)
+
+# ===========================
 # Копирование папки bin
 # ===========================
 copy_bin() {
@@ -65,6 +88,13 @@ create_symlinks() {
         fi
 
         if [[ $file == "$BASE_FILES/steamapps/"* ]]; then
+            continue
+        fi
+        
+        # КРИТИЧЕСКИ ВАЖНО: НЕ создаём ссылку для gameinfo.gi
+        # Этот файл модифицируется (добавление MetaMod, Swiftly и т.д.)
+        # и должен быть локальным в контейнере
+        if [[ $file == "$BASE_FILES/game/csgo/gameinfo.gi" ]]; then
             continue
         fi
 
@@ -227,61 +257,130 @@ cleanup_and_update() {
 
     mkdir -p "$TEMP_DIR"
 
-    # Обновление Metamod (если включено)
-    if [ "${METAMOD_AUTOUPDATE:-0}" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "${CSS_AUTOUPDATE:-0}" = "1" ]); then
+    # Обновление Metamod (только если включено)
+    if [ "${METAMOD_AUTOUPDATE:-0}" = "1" ]; then
         update_metamod
     fi
 
     # Обновление CounterStrikeSharp (CSS)
     if [ "${CSS_AUTOUPDATE:-0}" = "1" ]; then
-        update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
+        update_addon_universal "roflmuffin/CounterStrikeSharp" "css" "CSS"
+    fi
+
+    # Обновление Swiftly (SwiftlyS2)
+    if [ "${SWIFTLY_AUTOUPDATE:-0}" = "1" ]; then
+        update_addon_universal "swiftly-solution/swiftlys2" "swiftly" "Swiftly"
     fi
 
     # Обновляем server.cfg (если нужно)
     if [ "${UPDATE_CFG_FILE:-0}" = "1" ]; then
         update_server_cfg
     fi
+    
+    # Проверяем порядок в gameinfo.gi
+    verify_gameinfo_order
 
     rm -rf "$TEMP_DIR"
 }
 
-update_addon() {
+update_addon_universal() {
     local repo="$1"
-    local output_path="$2"
-    local temp_subdir="$3"
-    local addon_name="$4"
-
-    local temp_dir="$TEMP_DIR/$temp_subdir"
-    mkdir -p "$output_path" "$temp_dir"
-    rm -rf "$temp_dir"/*
-
-    local api_response
-    api_response="$(curl -s "https://api.github.com/repos/$repo/releases/latest")" || true
-    if [ -z "$api_response" ]; then
-        log_message "Не удалось получить инфо о релизе для $repo" "error"
+    local addon_type="$2"      # css, swiftly, modsharp
+    local addon_name="$3"      # CSS, Swiftly, ModSharp
+    
+    # Проверка валидности типа
+    if [ -z "${ADDON_FILE_PATTERNS[$addon_type]}" ]; then
+        log_message "Неизвестный тип аддона: $addon_type" "error"
         return 1
     fi
-
-    local asset_url
-    asset_url="$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-linux-.*\.zip' || true)"
+    
+    local temp_dir="$TEMP_DIR/$addon_type"
+    mkdir -p "$OUTPUT_DIR" "$temp_dir"
+    rm -rf "$temp_dir"/*
+    
+    # 1. Получить информацию о релизе
+    log_message "Проверка обновлений для $addon_name..." "running"
+    
+    local api_response
+    api_response="$(curl -s "https://api.github.com/repos/$repo/releases/latest")" || true
+    
+    if [ -z "$api_response" ]; then
+        log_message "Не удалось получить информацию о релизе для $repo" "error"
+        return 1
+    fi
+    
+    # 2. Извлечь версию
     local new_version
     new_version="$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+' || true)"
+    
+    if [ -z "$new_version" ]; then
+        log_message "Не удалось определить версию для $addon_name" "error"
+        return 1
+    fi
+    
+    # 3. Проверить необходимость обновления
     local current_version
     current_version="$(get_current_version "$addon_name")"
-
+    
     if ! check_version "$addon_name" "$current_version" "$new_version"; then
         return 0
     fi
-
+    
+    # 4. Найти подходящий asset
+    local file_pattern="${ADDON_FILE_PATTERNS[$addon_type]}"
+    local asset_url
+    
+    # Получаем список всех browser_download_url
+    local all_urls
+    all_urls="$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+')"
+    
+    # Ищем URL по паттерну
+    asset_url="$(echo "$all_urls" | grep -E "$file_pattern" | head -n1 || true)"
+    
     if [ -z "$asset_url" ]; then
-        log_message "Не найдена ссылка на linux-сборку для $repo. Обновите вручную" "error"
-        return 0
+        log_message "Не найден файл для $addon_name (паттерн: $file_pattern)" "error"
+        log_message "Доступные файлы:" "debug"
+        echo "$all_urls" | while read -r url; do
+            log_message "  - $(basename "$url")" "debug"
+        done
+        return 1
     fi
-
+    
+    log_message "Найден файл: $(basename "$asset_url")" "debug"
+    
+    # 5. Скачать и распаковать
     if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
-        cp -r "$temp_dir/addons/." "$output_path"
+        # 6. Установить аддон
+        # Ищем папку addons в архиве (может быть вложена)
+        local addons_src
+        addons_src="$(find "$temp_dir" -maxdepth 2 -type d -name 'addons' | head -n1)"
+        
+        if [ -n "$addons_src" ] && [ -d "$addons_src" ]; then
+            cp -r "$addons_src/." "$OUTPUT_DIR"
+            log_message "Файлы $addon_name скопированы из $addons_src в $OUTPUT_DIR" "debug"
+        else
+            log_message "Структура архива не содержит папку addons/ (проверено до глубины 2)" "error"
+            log_message "Содержимое $temp_dir:" "debug"
+            find "$temp_dir" -maxdepth 2 -type d | while read -r dir; do
+                log_message "  - $dir" "debug"
+            done
+            return 1
+        fi
+        
+        # 7. Обновить версию
         update_version_file "$addon_name" "$new_version"
+        
+        # 8. Обновить gameinfo.gi (если нужно)
+        local gameinfo_dir="${ADDON_GAMEINFO_DIRS[$addon_type]}"
+        if [ -n "$gameinfo_dir" ]; then
+            add_gameinfo_entry "$gameinfo_dir" "$addon_name"
+        fi
+        
         log_message "$addon_name обновлён до версии $new_version" "success"
+        return 0
+    else
+        log_message "Ошибка при установке $addon_name" "error"
+        return 1
     fi
 }
 
@@ -425,4 +524,159 @@ configure_metamod() {
             mv "${GAMEINFO_FILE}.tmp" "$GAMEINFO_FILE"
         fi
     fi
+}
+
+
+# ===========================
+# Управление gameinfo.gi
+# ===========================
+
+add_gameinfo_entry() {
+    local addon_dir="$1"      # Например: "swiftlys2", "modsharp"
+    local addon_name="$2"     # Например: "Swiftly", "ModSharp"
+    
+    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
+    local GAMEINFO_BACKUP="${GAMEINFO_FILE}.backup"
+    local GAMEINFO_ENTRY="			Game	csgo/addons/$addon_dir"
+    
+    if [ ! -f "$GAMEINFO_FILE" ]; then
+        log_message "Файл gameinfo.gi не найден: $GAMEINFO_FILE" "error"
+        return 1
+    fi
+    
+    # Создаём резервную копию перед изменением (если её ещё нет)
+    if [ ! -f "$GAMEINFO_BACKUP" ]; then
+        cp "$GAMEINFO_FILE" "$GAMEINFO_BACKUP"
+        log_message "Создана резервная копия gameinfo.gi" "debug"
+    fi
+    
+    # Проверяем, есть ли уже запись
+    if grep -q "Game[[:blank:]]*csgo\/addons\/$addon_dir" "$GAMEINFO_FILE"; then
+        log_message "Запись $addon_name уже присутствует в gameinfo.gi" "debug"
+        return 0
+    fi
+    
+    # Добавляем запись после Game_LowViolence
+    log_message "Добавляем $addon_name в gameinfo.gi..." "running"
+    
+    awk -v new_entry="$GAMEINFO_ENTRY" '
+        BEGIN { found=0; }
+        {
+            if (found == 1) {
+                print new_entry
+                found=0
+            }
+            print $0
+        }
+        /Game_LowViolence/ { found=1 }
+    ' "$GAMEINFO_FILE" > "${GAMEINFO_FILE}.tmp"
+    
+    if [ $? -eq 0 ]; then
+        mv "${GAMEINFO_FILE}.tmp" "$GAMEINFO_FILE"
+        log_message "$addon_name добавлен в gameinfo.gi" "success"
+        return 0
+    else
+        log_message "Ошибка при обновлении gameinfo.gi для $addon_name" "error"
+        rm -f "${GAMEINFO_FILE}.tmp"
+        return 1
+    fi
+}
+
+remove_gameinfo_entry() {
+    local addon_dir="$1"      # Например: "swiftlys2", "modsharp"
+    local addon_name="$2"     # Например: "Swiftly", "ModSharp"
+    
+    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
+    local GAMEINFO_BACKUP="${GAMEINFO_FILE}.backup"
+    
+    if [ ! -f "$GAMEINFO_FILE" ]; then
+        return 0
+    fi
+    
+    # Создаём резервную копию перед изменением (если её ещё нет)
+    if [ ! -f "$GAMEINFO_BACKUP" ]; then
+        cp "$GAMEINFO_FILE" "$GAMEINFO_BACKUP"
+        log_message "Создана резервная копия gameinfo.gi" "debug"
+    fi
+    
+    # Проверяем, есть ли запись
+    if ! grep -q "csgo\/addons\/$addon_dir" "$GAMEINFO_FILE"; then
+        return 0
+    fi
+    
+    log_message "Удаляем $addon_name из gameinfo.gi..." "running"
+    
+    # Удаляем строку с записью
+    sed -i "/csgo\/addons\/$addon_dir/d" "$GAMEINFO_FILE"
+    
+    log_message "$addon_name удалён из gameinfo.gi" "success"
+    return 0
+}
+
+verify_gameinfo_order() {
+    # Проверяет и АВТОМАТИЧЕСКИ ИСПРАВЛЯЕТ порядок записей в gameinfo.gi
+    # MetaMod должен быть первым, потом остальные
+    
+    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
+    local GAMEINFO_BACKUP="${GAMEINFO_FILE}.backup"
+    
+    if [ ! -f "$GAMEINFO_FILE" ]; then
+        return 0
+    fi
+    
+    # Получаем порядок записей
+    local entries
+    entries="$(grep -oP 'Game[[:blank:]]+csgo/addons/\K[^[:space:]]+' "$GAMEINFO_FILE" || true)"
+    
+    if [ -z "$entries" ]; then
+        return 0
+    fi
+    
+    log_message "Записи в gameinfo.gi:" "debug"
+    echo "$entries" | while read -r entry; do
+        log_message "  - $entry" "debug"
+    done
+    
+    # Проверяем что MetaMod первый (если он есть)
+    local first_entry
+    first_entry="$(echo "$entries" | head -n1)"
+    
+    if echo "$entries" | grep -q "metamod"; then
+        if [ "$first_entry" != "metamod" ]; then
+            log_message "ВНИМАНИЕ: MetaMod не первый в gameinfo.gi. Автоматически исправляю порядок..." "warning"
+            
+            # Создаём резервную копию перед изменением
+            if [ ! -f "$GAMEINFO_BACKUP" ]; then
+                cp "$GAMEINFO_FILE" "$GAMEINFO_BACKUP"
+            fi
+            
+            # Простой способ: удаляем строку с metamod и добавляем её первой
+            local temp_file="${GAMEINFO_FILE}.reorder"
+            
+            # Удаляем запись metamod
+            sed '/Game[[:blank:]]*csgo\/addons\/metamod/d' "$GAMEINFO_FILE" > "$temp_file"
+            
+            # Добавляем metamod первым (сразу после Game_LowViolence)
+            awk '
+                BEGIN { added=0; }
+                /Game_LowViolence/ {
+                    print $0
+                    if (!added) {
+                        print "\t\t\tGame\tcsgo/addons/metamod"
+                        added=1
+                    }
+                    next
+                }
+                { print $0 }
+            ' "$temp_file" > "${GAMEINFO_FILE}"
+            
+            rm -f "$temp_file"
+            
+            log_message "Порядок в gameinfo.gi исправлен: MetaMod теперь первый" "success"
+        else
+            log_message "Порядок в gameinfo.gi правильный: MetaMod первый" "debug"
+        fi
+    fi
+    
+    return 0
 }

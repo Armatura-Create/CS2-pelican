@@ -4,7 +4,7 @@
         "version": "PLCN_v3",
         "update_url": null
     },
-    "exported_at": "2025-12-10T09:13:22+00:00",
+    "exported_at": "2025-12-11T09:15:00+00:00",
     "name": "CS2 with base files",
     "author": "alext303@gmail.com",
     "uuid": "7d6ee663-9f1f-416b-bed2-75c999d4c0c3",
@@ -26,9 +26,9 @@
         "Default": "./game/cs2.sh -dedicated -strictportbind +ip $( [ \"$RCON_ENABLED\" == \"1\" ] && printf '%s' '0.0.0.0' || printf '%s' '{{SERVER_IP}}' ) -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} -maxplayers_override {{SRCDS_MAXPLAYERS}} -norestart $( [ \"$VAC_ENABLED\" == \"1\" ] && printf '%s' '-secure' || printf '%s' '-insecure' ) $( [ \"$BOTS_ENABLED\" == \"1\" ] || printf '%s' ' -nobots' ) $( [ \"$RCON_ENABLED\" == \"1\" ] || printf '%s' ' -usercon' ) $( [ \"$TV_ENABLED\" == \"1\" ] && printf '%s' \" +tv_enable 1 +tv_port $((SERVER_PORT + 1001)) +tv_maxclients {{TV_MAX_CLIENTS}} +tv_delay {{TV_DELAY}} +tv_name {{TV_NAME}} +tv_relayvoice 1 +tv_delaymapchange 1\" ) $( [ -n \"{{STEAM_ACC}}\" ] && printf '%s' \" +sv_setsteamaccount {{STEAM_ACC}}\" ) +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}} $( [ -n \"{{WORKSHOP_MAP_ID}}\" ] && printf '%s' \" +host_workshop_map {{WORKSHOP_MAP_ID}}\" ) $( [ -n \"{{WORKSHOP_COLLECTIONS_ID}}\" ] && printf '%s' \" +host_workshop_collection {{WORKSHOP_COLLECTIONS_ID}}\" ) $( [ -n \"{{MAP_GROUP}}\" ] && printf '%s' \" +mapgroup {{MAP_GROUP}}\" ) +servercfgfile {{CFG_FILE}} {{CUSTOM_PARAMS}} $( [ \"$DEBUG\" == \"0\" ] || printf '%s' ' -debug' )"
     },
     "config": {
-        "files": "{\n    \"game/csgo/cfg/{{CFG_FILE}}\": {\n        \"parser\": \"file\",\n        \"find\": {\n            \"rcon_password\": \"rcon_password \\\"{{env.RCON_PASSWORD}}\\\"\",\n            \"hostname\": \"hostname \\\"{{env.HOST_NAME}}\\\"\",\n            \"sv_tags\": \"sv_tags \\\"{{env.SERVER_TAGS}}\\\"\"\n        }\n    }\n}",
+        "files": "{\n    \"game\\/csgo\\/cfg\\/{{CFG_FILE}}\": {\n        \"parser\": \"file\",\n        \"find\": {\n            \"rcon_password\": \"rcon_password \\\"{{env.RCON_PASSWORD}}\\\"\",\n            \"hostname\": \"hostname \\\"{{env.HOST_NAME}}\\\"\",\n            \"sv_tags\": \"sv_tags \\\"{{env.SERVER_TAGS}}\\\"\"\n        }\n    }\n}",
         "startup": "{\n    \"done\": \"Connection to Steam servers successful\"\n}",
-        "logs": "{}",
+        "logs": "[]",
         "stop": "quit"
     },
     "scripts": {
@@ -42,9 +42,9 @@
         {
             "sort": 15,
             "name": "Bots Enable",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c / \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0431\u043e\u0442\u043e\u0432 \u043d\u0430 \u0432\u0430\u0448\u0435\u043c \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u044d\u0442\u0430 \u043e\u043f\u0446\u0438\u044f \u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0430.",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c / \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0431\u043e\u0442\u043e\u0432 \u043d\u0430 \u0432\u0430\u0448\u0435\u043c \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e\n\u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u044d\u0442\u0430 \u043e\u043f\u0446\u0438\u044f \u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0430.",
             "env_variable": "BOTS_ENABLED",
-            "default_value": "true",
+            "default_value": "1",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -67,9 +67,9 @@
         {
             "sort": 13,
             "name": "Junk Cleaner - Enabled",
-            "description": "\u0410\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043e\u0447\u0438\u0449\u0430\u0435\u0442 \u043b\u043e\u0433\u0438 \u0447\u0435\u0440\u0435\u0437 72 \u0447\u0430\u0441\u0430, \u0444\u0430\u0439\u043b\u044b \u0434\u0435\u043c\u043e \u0447\u0435\u0440\u0435\u0437 7 \u0434\u043d\u0435\u0439 \u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u043d\u044b\u0435 \u043a\u043e\u043f\u0438\u0438 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u0447\u0435\u0440\u0435\u0437 24 \u0447\u0430\u0441\u0430.",
+            "description": "\u0410\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043e\u0447\u0438\u0449\u0430\u0435\u0442 \u043b\u043e\u0433\u0438 \u0447\u0435\u0440\u0435\u0437 72 \u0447\u0430\u0441\u0430, \u0444\u0430\u0439\u043b\u044b \u0434\u0435\u043c\u043e\n\u0447\u0435\u0440\u0435\u0437 7 \u0434\u043d\u0435\u0439 \u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u043d\u044b\u0435 \u043a\u043e\u043f\u0438\u0438 \u0440\u0430\u0443\u043d\u0434\u043e\u0432 \u0447\u0435\u0440\u0435\u0437 24 \u0447\u0430\u0441\u0430.",
             "env_variable": "CLEANUP_ENABLED",
-            "default_value": "true",
+            "default_value": "1",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -79,9 +79,21 @@
         {
             "sort": 10,
             "name": "Auto Update - CounterStrikeSharp",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 CounterStrikeSharp \u043f\u0440\u0438 \u043a\u0430\u0436\u0434\u043e\u043c \u0437\u0430\u043f\u0443\u0441\u043a\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. Link: https://github.com/roflmuffin/CounterStrikeSharp",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435\nCounterStrikeSharp \u043f\u0440\u0438 \u043a\u0430\u0436\u0434\u043e\u043c \u0437\u0430\u043f\u0443\u0441\u043a\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. Link:\nhttps://github.com/roflmuffin/CounterStrikeSharp",
             "env_variable": "CSS_AUTOUPDATE",
-            "default_value": "true",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ]
+        },
+        {
+            "sort": 10.5,
+            "name": "Auto Update - Swiftly",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435\nSwiftly (SwiftlyS2) \u043f\u0440\u0438 \u043a\u0430\u0436\u0434\u043e\u043c \u0437\u0430\u043f\u0443\u0441\u043a\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. Link:\nhttps://github.com/swiftly-solution/swiftlys2",
+            "env_variable": "SWIFTLY_AUTOUPDATE",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -91,7 +103,7 @@
         {
             "sort": 14,
             "name": "Custom Parameters",
-            "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0437\u0430\u043f\u0443\u0441\u043a\u0430, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043d\u0443\u0436\u043d\u043e \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0432 \u0441\u0442\u0440\u043e\u043a\u0443 \u0437\u0430\u043f\u0443\u0441\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435",
+            "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0437\u0430\u043f\u0443\u0441\u043a\u0430, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043d\u0443\u0436\u043d\u043e\n\u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0432 \u0441\u0442\u0440\u043e\u043a\u0443 \u0437\u0430\u043f\u0443\u0441\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435",
             "env_variable": "CUSTOM_PARAMS",
             "default_value": "",
             "user_viewable": true,
@@ -104,9 +116,9 @@
         {
             "sort": 27,
             "name": "Debug",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0440\u0435\u0436\u0438\u043c \u043e\u0442\u043b\u0430\u0434\u043a\u0438. \u0415\u0421\u041b\u0418 \u0412\u042b \u041d\u0415 \u0417\u041d\u0410\u0415\u0422\u0415, \u0414\u041b\u042f \u0427\u0415\u0413\u041e \u042d\u0422\u041e \u041d\u0423\u0416\u041d\u041e, \u041d\u0415 \u0412\u041a\u041b\u042e\u0427\u0410\u0419\u0422\u0415!",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0440\u0435\u0436\u0438\u043c \u043e\u0442\u043b\u0430\u0434\u043a\u0438. \u0415\u0421\u041b\u0418 \u0412\u042b \u041d\u0415 \u0417\u041d\u0410\u0415\u0422\u0415, \u0414\u041b\u042f \u0427\u0415\u0413\u041e \u042d\u0422\u041e\n\u041d\u0423\u0416\u041d\u041e, \u041d\u0415 \u0412\u041a\u041b\u042e\u0427\u0410\u0419\u0422\u0415!",
             "env_variable": "DEBUG",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -116,9 +128,9 @@
         {
             "sort": 11,
             "name": "Filter - Enabled",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0444\u0438\u043b\u044c\u0442\u0440 \u043a\u043e\u043d\u0441\u043e\u043b\u0438, \u0447\u0442\u043e\u0431\u044b \u0441\u043a\u0440\u044b\u0442\u044c \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f. \u041d\u0430\u0441\u0442\u0440\u043e\u0439\u0442\u0435 \u0435\u0433\u043e \u0441 \u043f\u043e\u043c\u043e\u0449\u044c\u044e \u0444\u0430\u0439\u043b\u0430 '/game/mute_messages.cfg', \u0435\u0441\u043b\u0438 \u0432\u043a\u043b\u044e\u0447\u0435\u043d\u043e.",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0444\u0438\u043b\u044c\u0442\u0440 \u043a\u043e\u043d\u0441\u043e\u043b\u0438, \u0447\u0442\u043e\u0431\u044b \u0441\u043a\u0440\u044b\u0442\u044c\n\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f. \u041d\u0430\u0441\u0442\u0440\u043e\u0439\u0442\u0435 \u0435\u0433\u043e \u0441 \u043f\u043e\u043c\u043e\u0449\u044c\u044e \u0444\u0430\u0439\u043b\u0430\n'/game/mute_messages.cfg', \u0435\u0441\u043b\u0438 \u0432\u043a\u043b\u044e\u0447\u0435\u043d\u043e.",
             "env_variable": "ENABLE_FILTER",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -128,9 +140,9 @@
         {
             "sort": 12,
             "name": "Filter - Preview Mode",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0440\u0435\u0436\u0438\u043c \u043f\u0440\u0435\u0434\u0432\u0430\u0440\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0433\u043e \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0434\u043b\u044f \u0444\u0438\u043b\u044c\u0442\u0440\u0430 \u043a\u043e\u043d\u0441\u043e\u043b\u0438. \u0412 \u0440\u0435\u0436\u0438\u043c\u0435 \u043f\u0440\u0435\u0434\u0432\u0430\u0440\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0433\u043e \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u044e\u0442\u0441\u044f \u043a\u0440\u0430\u0441\u043d\u044b\u043c \u0446\u0432\u0435\u0442\u043e\u043c, \u0447\u0442\u043e \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442 \u0432\u0430\u043c \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u043a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044e \u0444\u0438\u043b\u044c\u0442\u0440\u0430.",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0440\u0435\u0436\u0438\u043c \u043f\u0440\u0435\u0434\u0432\u0430\u0440\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0433\u043e\n\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0434\u043b\u044f \u0444\u0438\u043b\u044c\u0442\u0440\u0430 \u043a\u043e\u043d\u0441\u043e\u043b\u0438. \u0412 \u0440\u0435\u0436\u0438\u043c\u0435\n\u043f\u0440\u0435\u0434\u0432\u0430\u0440\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0433\u043e \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435\n\u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u044e\u0442\u0441\u044f \u043a\u0440\u0430\u0441\u043d\u044b\u043c \u0446\u0432\u0435\u0442\u043e\u043c, \u0447\u0442\u043e \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442\n\u0432\u0430\u043c \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u043a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044e \u0444\u0438\u043b\u044c\u0442\u0440\u0430.",
             "env_variable": "FILTER_PREVIEW_MODE",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -140,7 +152,7 @@
         {
             "sort": 5,
             "name": "Game Mode",
-            "description": "\u042d\u0442\u043e \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442 \u0440\u0435\u0436\u0438\u043c \u0438\u0433\u0440\u044b \u043d\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435:  https://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types",
+            "description": "\u042d\u0442\u043e \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442 \u0440\u0435\u0436\u0438\u043c \u0438\u0433\u0440\u044b \u043d\u0430\n\u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435: \nhttps://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types",
             "env_variable": "GAME_MODE",
             "default_value": "0",
             "user_viewable": true,
@@ -154,7 +166,7 @@
         {
             "sort": 6,
             "name": "Game Type",
-            "description": "\u042d\u0442\u043e \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442 \u0442\u0438\u043f \u0438\u0433\u0440\u044b \u043d\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435:  https://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types",
+            "description": "\u042d\u0442\u043e \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442 \u0442\u0438\u043f \u0438\u0433\u0440\u044b \u043d\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435.\n\u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435: \nhttps://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types",
             "env_variable": "GAME_TYPE",
             "default_value": "0",
             "user_viewable": true,
@@ -168,7 +180,7 @@
         {
             "sort": 1,
             "name": "Host Name",
-            "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0438\u0433\u0440\u043e\u0432\u043e\u0433\u043e \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u0435\u043c\u043e\u0435 \u0432 \u0441\u043f\u0438\u0441\u043a\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u043e\u0432 CS2",
+            "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0438\u0433\u0440\u043e\u0432\u043e\u0433\u043e \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u0435\u043c\u043e\u0435 \u0432 \u0441\u043f\u0438\u0441\u043a\u0435\n\u0441\u0435\u0440\u0432\u0435\u0440\u043e\u0432 CS2",
             "env_variable": "HOST_NAME",
             "default_value": "ServUp CS2",
             "user_viewable": true,
@@ -181,9 +193,9 @@
         {
             "sort": 26,
             "name": "Egg - File Logging",
-            "description": "\u0417\u0430\u043f\u0438\u0441\u044b\u0432\u0430\u0439\u0442\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f Egg \u0432 /egg.log, \u0433\u0434\u0435 \u043e\u043d\u0438 \u0445\u0440\u0430\u043d\u044f\u0442\u0441\u044f \u0432 \u0442\u0435\u0447\u0435\u043d\u0438\u0435 48 \u0447\u0430\u0441\u043e\u0432.",
+            "description": "\u0417\u0430\u043f\u0438\u0441\u044b\u0432\u0430\u0439\u0442\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f Egg \u0432 /egg.log, \u0433\u0434\u0435 \u043e\u043d\u0438 \u0445\u0440\u0430\u043d\u044f\u0442\u0441\u044f \u0432\n\u0442\u0435\u0447\u0435\u043d\u0438\u0435 48 \u0447\u0430\u0441\u043e\u0432.",
             "env_variable": "LOG_FILE_ENABLED",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": false,
             "user_editable": false,
             "rules": [
@@ -193,7 +205,7 @@
         {
             "sort": 25,
             "name": "Egg - Log Level",
-            "description": "\u0423\u0440\u043e\u0432\u0435\u043d\u044c \u0436\u0443\u0440\u043d\u0430\u043b\u0430 \u0434\u043b\u044f \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f Egg \u0432 \u043a\u043e\u043d\u0441\u043e\u043b\u0438 \u0438 \u0444\u0430\u0439\u043b\u0435 \u0436\u0443\u0440\u043d\u0430\u043b\u0430.",
+            "description": "\u0423\u0440\u043e\u0432\u0435\u043d\u044c \u0436\u0443\u0440\u043d\u0430\u043b\u0430 \u0434\u043b\u044f \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f Egg \u0432 \u043a\u043e\u043d\u0441\u043e\u043b\u0438 \u0438 \u0444\u0430\u0439\u043b\u0435\n\u0436\u0443\u0440\u043d\u0430\u043b\u0430.",
             "env_variable": "LOG_LEVEL",
             "default_value": "INFO",
             "user_viewable": true,
@@ -220,9 +232,9 @@
         {
             "sort": 9,
             "name": "Auto Update - MetaMod",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 Metamod \u043f\u0440\u0438 \u043a\u0430\u0436\u0434\u043e\u043c \u0437\u0430\u043f\u0443\u0441\u043a\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. Link: https://www.metamodsource.net/downloads.php/?branch=master",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 Metamod\n\u043f\u0440\u0438 \u043a\u0430\u0436\u0434\u043e\u043c \u0437\u0430\u043f\u0443\u0441\u043a\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. Link:\nhttps://www.metamodsource.net/downloads.php/?branch=master",
             "env_variable": "METAMOD_AUTOUPDATE",
-            "default_value": "true",
+            "default_value": "1",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -232,9 +244,9 @@
         {
             "sort": 18,
             "name": "Using Rcon",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c / \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c RCON \u0434\u043b\u044f \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u044f RCON-\u043a\u043e\u043c\u0430\u043d\u0434 \u0441 \u0432\u043d\u0435\u0448\u043d\u0438\u043c\u0438 \u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0430\u043c\u0438. \u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u044d\u0442\u0430 \u043e\u043f\u0446\u0438\u044f \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0430.",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c / \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c RCON \u0434\u043b\u044f \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u044f RCON-\u043a\u043e\u043c\u0430\u043d\u0434 \u0441\n\u0432\u043d\u0435\u0448\u043d\u0438\u043c\u0438 \u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0430\u043c\u0438. \u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u044d\u0442\u0430 \u043e\u043f\u0446\u0438\u044f\n\u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0430.",
             "env_variable": "RCON_ENABLED",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -244,7 +256,7 @@
         {
             "sort": 19,
             "name": "Rcon Password",
-            "description": "\u041f\u0430\u0440\u043e\u043b\u044c \u0434\u043b\u044f \u0443\u0434\u0430\u043b\u0435\u043d\u043d\u043e\u0433\u043e \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (\u0420\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u0435\u0441\u043b\u0438 \u0432\u043a\u043b\u044e\u0447\u0435\u043d <USING RCON>)",
+            "description": "\u041f\u0430\u0440\u043e\u043b\u044c \u0434\u043b\u044f \u0443\u0434\u0430\u043b\u0435\u043d\u043d\u043e\u0433\u043e \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430\n(\u0420\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u0435\u0441\u043b\u0438 \u0432\u043a\u043b\u044e\u0447\u0435\u043d <USING RCON>)",
             "env_variable": "RCON_PASSWORD",
             "default_value": "",
             "user_viewable": true,
@@ -283,7 +295,7 @@
         {
             "sort": 3,
             "name": "Map",
-            "description": "\u0421\u0442\u0430\u0440\u0442\u043e\u0432\u0430\u044f \u043a\u0430\u0440\u0442\u0430 \u0434\u043b\u044f \u0441\u0435\u0440\u0432\u0435\u0440\u0430. \u041f\u0440\u0438\u043c\u0435\u0440\u044b: de_dust2, de_mirage, de_nuke, de_overpass, de_inferno, de_ancient, de_vertigo, de_anubis, cs_italy, cs_office \u0413\u043e\u043d\u043a\u0430 \u0432\u043e\u043e\u0440\u0443\u0436\u0435\u043d\u0438\u0439: ar_baggage, ar_shoots",
+            "description": "\u0421\u0442\u0430\u0440\u0442\u043e\u0432\u0430\u044f \u043a\u0430\u0440\u0442\u0430 \u0434\u043b\u044f \u0441\u0435\u0440\u0432\u0435\u0440\u0430. \u041f\u0440\u0438\u043c\u0435\u0440\u044b: de_dust2, de_mirage, de_nuke,\nde_overpass, de_inferno, de_ancient, de_vertigo, de_anubis, cs_italy, cs_office \u0413\u043e\u043d\u043a\u0430\n\u0432\u043e\u043e\u0440\u0443\u0436\u0435\u043d\u0438\u0439: ar_baggage, ar_shoots",
             "env_variable": "SRCDS_MAP",
             "default_value": "de_mirage",
             "user_viewable": true,
@@ -310,7 +322,7 @@
         {
             "sort": 24,
             "name": "Validate Install",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0444\u0430\u0439\u043b\u043e\u0432 \u0438\u0433\u0440\u043e\u0432\u043e\u0433\u043e \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u0447\u0435\u0440\u0435\u0437 SteamCMD. \u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 0, \u0447\u0442\u043e\u0431\u044b \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c.",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0444\u0430\u0439\u043b\u043e\u0432 \u0438\u0433\u0440\u043e\u0432\u043e\u0433\u043e\n\u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u0447\u0435\u0440\u0435\u0437 SteamCMD. \u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 0, \u0447\u0442\u043e\u0431\u044b\n\u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c.",
             "env_variable": "SRCDS_VALIDATE",
             "default_value": "0",
             "user_viewable": false,
@@ -324,7 +336,7 @@
         {
             "sort": 4,
             "name": "Game Server Login Token (GSLT)",
-            "description": "\u0422\u043e\u043a\u0435\u043d \u0443\u0447\u0435\u0442\u043d\u043e\u0439 \u0437\u0430\u043f\u0438\u0441\u0438 Steam, \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u044b\u0439 \u0434\u043b\u044f \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0433\u043e \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0441\u0435\u0440\u0432\u0435\u0440\u0430. https://steamcommunity.com/dev/managegameservers",
+            "description": "\u0422\u043e\u043a\u0435\u043d \u0443\u0447\u0435\u0442\u043d\u043e\u0439 \u0437\u0430\u043f\u0438\u0441\u0438 Steam, \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u044b\u0439 \u0434\u043b\u044f \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0433\u043e\n\u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0441\u0435\u0440\u0432\u0435\u0440\u0430. https://steamcommunity.com/dev/managegameservers",
             "env_variable": "STEAM_ACC",
             "default_value": "",
             "user_viewable": true,
@@ -352,7 +364,7 @@
             "name": "TV Enabled",
             "description": "",
             "env_variable": "TV_ENABLED",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -390,7 +402,7 @@
             "name": "Config file updater",
             "description": "\u041e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u043c \u0444\u0430\u0439\u043b \u043a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u0438 \u0435\u0441\u043b\u0438 \u043d\u0443\u0436\u043d\u043e",
             "env_variable": "UPDATE_CFG_FILE",
-            "default_value": "false",
+            "default_value": "0",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
@@ -400,9 +412,9 @@
         {
             "sort": 8,
             "name": "Valve Anti-Cheat",
-            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c Valve Anti-Cheat \u043d\u0430 \u0432\u0430\u0448\u0435\u043c \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u2014 \u0412\u043a\u043b\u044e\u0447\u0435\u043d\u043e.",
+            "description": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c Valve Anti-Cheat \u043d\u0430 \u0432\u0430\u0448\u0435\u043c \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u041f\u043e\n\u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u2014 \u0412\u043a\u043b\u044e\u0447\u0435\u043d\u043e.",
             "env_variable": "VAC_ENABLED",
-            "default_value": "true",
+            "default_value": "1",
             "user_viewable": true,
             "user_editable": true,
             "rules": [

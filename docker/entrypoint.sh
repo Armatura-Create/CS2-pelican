@@ -59,6 +59,50 @@ initialize_server_cfg
 configure_metamod
 
 # ============================
+# Инициализация gameinfo.gi
+# ============================
+# КРИТИЧЕСКИ ВАЖНО: gameinfo.gi НЕ должен быть символьной ссылкой!
+# Мы его модифицируем (добавляем MetaMod, Swiftly и т.д.)
+# и изменения должны сохраняться локально в контейнере
+GAMEINFO_CONTAINER="/home/container/game/csgo/gameinfo.gi"
+GAMEINFO_MNT="/mnt/game/csgo/gameinfo.gi"
+
+if [ -L "$GAMEINFO_CONTAINER" ]; then
+    # Если это символьная ссылка - удаляем её и копируем файл
+    log_message "gameinfo.gi является символьной ссылкой, преобразуем в обычный файл..." "warning"
+    rm -f "$GAMEINFO_CONTAINER"
+    if [ -f "$GAMEINFO_MNT" ]; then
+        cp "$GAMEINFO_MNT" "$GAMEINFO_CONTAINER"
+        log_message "gameinfo.gi скопирован из /mnt" "success"
+    fi
+fi
+
+if [ ! -f "$GAMEINFO_CONTAINER" ]; then
+    # Если файла нет - копируем из /mnt (если есть там)
+    if [ -f "$GAMEINFO_MNT" ]; then
+        log_message "Копируем gameinfo.gi из /mnt..." "running"
+        cp "$GAMEINFO_MNT" "$GAMEINFO_CONTAINER"
+        log_message "gameinfo.gi скопирован" "success"
+    else
+        log_message "КРИТИЧЕСКАЯ ОШИБКА: gameinfo.gi не найден ни в контейнере, ни в /mnt!" "error"
+        log_message "Сервер может не запуститься. Убедитесь что SteamCMD установил игру корректно." "error"
+    fi
+fi
+
+# Удаляем записи для отключенных И неустановленных аддонов из gameinfo.gi
+# Если аддон установлен (папка существует), оставляем запись даже если автообновление выключено
+if [ "${METAMOD_AUTOUPDATE:-0}" != "1" ] && [ ! -d "$OUTPUT_DIR/metamod" ]; then
+    remove_gameinfo_entry "metamod" "MetaMod"
+fi
+
+if [ "${SWIFTLY_AUTOUPDATE:-0}" != "1" ] && [ ! -d "$OUTPUT_DIR/swiftlys2" ]; then
+    remove_gameinfo_entry "swiftlys2" "Swiftly"
+fi
+
+# Проверяем порядок записей в gameinfo.gi
+verify_gameinfo_order
+
+# ============================
 # 3) Очистка + обновление (если включено)
 # ============================
 cleanup_and_update
