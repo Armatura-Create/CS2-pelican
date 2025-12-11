@@ -38,6 +38,12 @@ declare -A ADDON_REQUIRES_METAMOD=(
     ["modsharp"]="0"   # ModSharp standalone
 )
 
+declare -A ADDON_INSTALL_DIRS=(
+    ["css"]="counterstrikesharp"     # CSS устанавливается в addons/counterstrikesharp
+    ["swiftly"]="swiftlys2"          # Swiftly устанавливается в addons/swiftlys2
+    ["modsharp"]="modsharp"          # ModSharp устанавливается в addons/modsharp
+)
+
 # ===========================
 # Копирование папки bin
 # ===========================
@@ -318,12 +324,26 @@ update_addon_universal() {
         return 1
     fi
     
-    # 3. Проверить необходимость обновления
+    # 3. Проверить физическое наличие аддона и необходимость обновления
     local current_version
     current_version="$(get_current_version "$addon_name")"
     
-    if ! check_version "$addon_name" "$current_version" "$new_version"; then
-        return 0
+    # Проверяем существование папки аддона
+    local addon_install_dir="${ADDON_INSTALL_DIRS[$addon_type]}"
+    local addon_full_path="$OUTPUT_DIR/$addon_install_dir"
+    
+    if [ ! -d "$addon_full_path" ]; then
+        if [ -n "$current_version" ]; then
+            log_message "$addon_name удалён вручную (версия: $current_version, но папка отсутствует). Переустанавливаю..." "warning"
+        else
+            log_message "$addon_name не установлен. Устанавливаю версию $new_version..." "running"
+        fi
+        # Принудительная установка - НЕ проверяем версию
+    else
+        # Папка существует - проверяем версию
+        if ! check_version "$addon_name" "$current_version" "$new_version"; then
+            return 0
+        fi
     fi
     
     # 4. Найти подходящий asset
@@ -356,6 +376,12 @@ update_addon_universal() {
         addons_src="$(find "$temp_dir" -maxdepth 2 -type d -name 'addons' | head -n1)"
         
         if [ -n "$addons_src" ] && [ -d "$addons_src" ]; then
+            # Для Swiftly: удаляем папку metamod из архива (она там может быть, но мы управляем MetaMod отдельно)
+            if [ "$addon_type" = "swiftly" ] && [ -d "$addons_src/metamod" ]; then
+                log_message "Удаляем metamod из архива Swiftly (управляется отдельно)" "debug"
+                rm -rf "$addons_src/metamod"
+            fi
+            
             cp -r "$addons_src/." "$OUTPUT_DIR"
             log_message "Файлы $addon_name скопированы из $addons_src в $OUTPUT_DIR" "debug"
         else
@@ -385,13 +411,16 @@ update_addon_universal() {
 }
 
 update_metamod() {
-    if [ ! -d "$OUTPUT_DIR/metamod" ]; then
-        log_message "Metamod не установлен. Устанавливаем..." "running"
-    fi
-
     local branch="${1:-master}"  # stable/dev/master
     local page file_name url_primary tmp_tar current_version new_version
     tmp_tar="$TEMP_DIR/metamod.tar.gz"
+    
+    local metamod_installed=false
+    if [ ! -d "$OUTPUT_DIR/metamod" ]; then
+        log_message "Metamod не установлен" "running"
+    else
+        metamod_installed=true
+    fi
 
     # 1) Страница загрузок
     local downloads_page="https://www.metamodsource.net/downloads.php?branch=${branch}"
@@ -427,8 +456,20 @@ update_metamod() {
     file_name="$(printf '%s' "$file_name" | xargs)"
 
     current_version="$(get_current_version "Metamod")"
-    if ! check_version "Metamod" "$current_version" "$new_version"; then
-        return 0
+    
+    # Проверяем: если папка удалена вручную, но версия записана - переустанавливаем
+    if [ "$metamod_installed" = false ]; then
+        if [ -n "$current_version" ]; then
+            log_message "Metamod удалён вручную (версия: $current_version, но папка отсутствует). Переустанавливаю..." "warning"
+        else
+            log_message "Устанавливаю Metamod версии $new_version..." "running"
+        fi
+        # Принудительная установка - НЕ проверяем версию
+    else
+        # Папка существует - проверяем версию
+        if ! check_version "Metamod" "$current_version" "$new_version"; then
+            return 0
+        fi
     fi
 
     log_message "Новая версия для Metamod: ${new_version} (файл: ${file_name})" "running"

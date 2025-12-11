@@ -3,8 +3,9 @@ meta:
   version: PLCN_v3
   update_url: null
 exported_at: '2025-12-11T09:14:57+00:00'
-name: 'CS2 with base files (SwiftlyS2)'
+name: 'CS2 with base files'
 author: alext303@gmail.com
+uuid: 7d6ee663-9f1f-416b-bed2-75c999d4c0c3
 description: |-
   Egg for start server with one instance game files
   Create mount 
