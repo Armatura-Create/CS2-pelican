@@ -146,21 +146,32 @@ main() {
     create_env_file
 
     # 4) Создаём systemd unit
-    sudo bash -c "cat <<EOF > /etc/systemd/system/\$SERVICE_NAME
+    local service_dir
+    service_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    if [[ "$SERVICE_NAME" != *.service ]]; then
+        SERVICE_NAME="${SERVICE_NAME}.service"
+    fi
+
+    if [[ "$SERVICE_NAME" == *"/"* ]]; then
+        log_message "Имя systemd-сервиса не должно содержать '/': $SERVICE_NAME" "error"
+        exit 1
+    fi
+
+    sudo tee "/etc/systemd/system/${SERVICE_NAME}" > /dev/null <<EOF
 [Unit]
 Description=CS2 Updater Service
 After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$(pwd)/start.sh
-WorkingDirectory=$(pwd)
+ExecStart=${service_dir}/start.sh
+WorkingDirectory=${service_dir}
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
-"
 
     sudo systemctl daemon-reload
     sudo systemctl enable "$SERVICE_NAME"
