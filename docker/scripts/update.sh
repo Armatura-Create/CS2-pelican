@@ -45,9 +45,45 @@ declare -A ADDON_INSTALL_DIRS=(
 )
 
 # ===========================
+# Проверка mount
+# ===========================
+validate_mount() {
+    local missing=0
+
+    if [ ! -d "$BASE_FILES" ] || [ -z "$(ls -A "$BASE_FILES" 2>/dev/null || true)" ]; then
+        log_message "Mount $BASE_FILES пуст или не смонтирован." "error"
+        log_message "В Pelican укажите: source = \$BASE_DIR/server на хосте, target = /mnt" "error"
+        missing=1
+    fi
+
+    for required_path in "game/bin" "game/csgo"; do
+        if [ ! -d "$BASE_FILES/$required_path" ]; then
+            log_message "Не найдено: $BASE_FILES/$required_path" "error"
+            missing=1
+        fi
+    done
+
+    if [ ! -f "$BASE_FILES/game/csgo/steam.inf" ]; then
+        log_message "Не найден $BASE_FILES/game/csgo/steam.inf — CS2 ещё не установлена на хосте." "error"
+        log_message "На хосте запустите updater: sudo systemctl start <ваш-сервис> или ./start.sh" "error"
+        missing=1
+    fi
+
+    if [ "$missing" -ne 0 ]; then
+        log_message "Проверьте на хосте: ls -la \$BASE_DIR/server/game/" "error"
+        log_message "Пример mount: source /home/cs2/server → target /mnt (если BASE_DIR=/home/cs2)" "error"
+        exit 1
+    fi
+
+    log_message "Mount $BASE_FILES проверен, файлы игры на месте." "success"
+}
+
+# ===========================
 # Копирование папки bin
 # ===========================
 copy_bin() {
+    validate_mount
+
     log_message "Копируем /game/bin из $BASE_FILES в $CONTAINER_FILES (rsync --delete)..." "running"
     mkdir -p "$CONTAINER_FILES/game/bin"
 

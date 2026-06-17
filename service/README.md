@@ -117,46 +117,115 @@ $BASE_DIR/server/
 
 Для каждого CS2-сервера с этим egg нужен **mount**, чтобы контейнер видел общие файлы игры.
 
-### Пути
+Настройка состоит из **трёх шагов** — без любого из них контейнер не увидит `/mnt/game/bin`.
 
-| Поле в панели | Значение |
+### Шаг 1. Wings — разрешить путь (`allowed_mounts`)
+
+По умолчанию Wings **не монтирует** произвольные папки с хоста. Путь нужно явно разрешить в конфиге демона на ноде.
+
+На сервере-ноде (где крутится Wings):
+
+```bash
+sudo nano /etc/pelican/config.yml
+```
+
+Найдите или добавьте секцию `allowed_mounts`. Укажите **родительскую** папку вашего `BASE_DIR` — все подпапки тоже станут доступны:
+
+```yaml
+allowed_mounts:
+  - /home/cs2
+```
+
+Примеры для других путей:
+
+```yaml
+allowed_mounts:
+  - /home/cs2_base
+```
+
+или несколько путей:
+
+```yaml
+allowed_mounts:
+  - /home/cs2
+  - /var/lib/pelican/mounts
+```
+
+Сохраните файл и перезапустите Wings:
+
+```bash
+sudo systemctl restart wings
+sudo systemctl status wings
+```
+
+> Документация Pelican: [Using Mounts](https://pelican.dev/docs/guides/mounts/)
+
+### Шаг 2. Панель — создать mount
+
+**Admin** → **Mounts** → **Create Mount**
+
+| Поле | Значение |
 |---|---|
+| **Name** | `Base Files CS2` (любое) |
 | **Source** (хост) | `$BASE_DIR/server` |
 | **Target** (контейнер) | `/mnt` |
-| **Read Only** | рекомендуется `true` |
+| **Read Only** | `Только чтение` — рекомендуется |
+| **User Mountable** | по желанию |
 
-Пример при `BASE_DIR=/home/cs2_base`:
+Пример при `BASE_DIR=/home/cs2`:
 
 ```
-Source:  /home/cs2_base/server
+Source:  /home/cs2/server
 Target:  /mnt
 ```
 
+После создания привяжите mount к:
+
+- **Egg**: `CS2 with base files` (ваш egg)
+- **Node**: нода, на которой запущен сервер (например `ovhservers`)
+
+### Шаг 3. Панель — добавить mount на сервер
+
+Создания mount и привязки к egg/node **недостаточно** — mount нужно добавить на **конкретный сервер**:
+
+1. **Admin** → откройте сервер (например `Test`)
+2. Вкладка **Mounts**
+3. Кнопка **+** → выберите `Base Files CS2`
+4. **Перезапустите** сервер
+
+### Проверка
+
+На хосте — файлы игры должны существовать **до** запуска контейнера:
+
+```bash
+grep BASE_DIR /home/cs2/.env
+ls "$BASE_DIR/server/game/bin"
+ls "$BASE_DIR/server/game/csgo/steam.inf"
+```
+
+В контейнере — временно смените **Startup Command** на:
+
+```bash
+ls -la /mnt && ls -la /mnt/game/bin
+```
+
+Ожидаемый вывод: папки `game`, `steamapps` и т.д. внутри `/mnt`.
+
+Если `/mnt` пустой — проверьте шаги 1–3 (чаще всего не добавлен `allowed_mounts` или mount не привязан к серверу).
+
+> Mount **не виден** в файловом менеджере панели и через SFTP — только внутри запущенного контейнера.
+
 ### Что видит контейнер
 
-Внутри контейнера egg монтирует `/mnt` как общую копию файлов:
+Внутри контейнера egg использует `/mnt` как общую копию файлов:
 
 ```
 /mnt/game/csgo/     ← файлы игры с хоста
+/mnt/game/bin/      ← бинарники
 /home/container/    ← рабочая директория сервера (симлинки на /mnt)
 ```
 
 `gameinfo.gi` и пользовательские конфиги остаются локальными в контейнере — это учтено в `docker/entrypoint.sh`.
-
-### Создание mount в панели
-
-1. Откройте сервер → вкладка **Mounts** (или **Settings → Mounts**).
-2. **Add Mount**:
-   - Source: `/home/cs2_base/server` (ваш `BASE_DIR` + `/server`)
-   - Target: `/mnt`
-   - Read Only: включить
-3. Перезапустите сервер.
-
-Убедитесь, что путь на хосте существует и updater уже скачал игру:
-
-```bash
-ls /home/cs2_base/server/game/csgo/steam.inf
-```
 
 ---
 
@@ -207,10 +276,16 @@ journalctl -u cs2-updater.service -f
 - Client API ключ не имеет доступа к серверу.
 - Создайте ключ от аккаунта-владельца сервера или выдайте права.
 
-### Сервер не видит файлы игры
+### Сервер не видит файлы игры / `change_dir "/mnt/game/bin" failed`
 
-- Mount: source = `$BASE_DIR/server`, target = `/mnt`.
-- Updater должен хотя бы раз успешно выполнить SteamCMD.
+Проверьте по порядку:
+
+1. **Wings `allowed_mounts`** — в `/etc/pelican/config.yml` должен быть путь к `BASE_DIR`, затем `systemctl restart wings`
+2. **Mount в панели** — source = `$BASE_DIR/server`, target = `/mnt`
+3. **Mount на сервере** — Admin → сервер → Mounts → **+** → перезапуск
+4. **Файлы на хосте** — updater скачал игру: `ls $BASE_DIR/server/game/bin`
+
+Типичная ошибка: mount создан в панели, но **не добавлен `allowed_mounts`** в Wings — контейнер видит пустой `/mnt`.
 
 ### systemd: `Is a directory`
 

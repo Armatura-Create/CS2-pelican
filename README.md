@@ -21,7 +21,8 @@ cd service && ./install.sh && ./test-pelican.sh
 
 # 2. Импортировать egg в Pelican (egg/pelican.yaml)
 
-# 3. На каждом CS2-сервере создать mount:
-#    source: /home/cs2_base/server
-#    target: /mnt
+# 3. Настроить mount (подробно в service/README.md):
+#    a) Wings: allowed_mounts в /etc/pelican/config.yml + restart wings
+#    b) Панель: mount source=$BASE_DIR/server → target=/mnt
+#    c) Добавить mount на каждый CS2-сервер → перезапуск
 ```
