@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 source "./utils/logging.sh"
-trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 PASS=0
 FAIL=0
@@ -64,6 +63,30 @@ load_env() {
     : "${PELICAN_NODE_ID:?PELICAN_NODE_ID не задан}"
 
     PELICAN_URL="${PELICAN_URL%/}"
+
+    if [ "$PELICAN_APP_TOKEN" = "$PELICAN_API_TOKEN" ]; then
+        check_warn "PELICAN_APP_TOKEN и PELICAN_API_TOKEN совпадают — для Client API нужен отдельный ключ"
+    fi
+}
+
+explain_client_api_error() {
+    local http_code="$1"
+    local body="$2"
+
+    if [ "$http_code" = "403" ] && echo "$body" | grep -qi "application API key"; then
+        log_message "В PELICAN_API_TOKEN указан Application API ключ. Нужен Client API ключ." "error"
+        log_message "Создайте его: панель → Account → API Credentials → Client API → Create." "warning"
+        return 0
+    fi
+
+    if [ "$http_code" = "401" ]; then
+        log_message "Токен недействителен или отозван. Создайте новый Client API ключ." "warning"
+        return 0
+    fi
+
+    if [ "$http_code" = "403" ]; then
+        log_message "Доступ запрещён. Проверьте тип ключа, IP whitelist и права на сервер." "warning"
+    fi
 }
 
 test_panel_reachable() {
@@ -88,13 +111,13 @@ test_application_api() {
 
     if [[ "$RESPONSE_CODE" -lt 200 || "$RESPONSE_CODE" -gt 299 ]]; then
         check_fail "Application API: HTTP $RESPONSE_CODE"
-        log_message "Ответ: $RESPONSE_BODY" "debug"
-        return 1
+        log_message "Ответ: $RESPONSE_BODY" "info"
+        return 0
     fi
 
     if ! echo "$RESPONSE_BODY" | jq . >/dev/null 2>&1; then
         check_fail "Application API: ответ не является валидным JSON"
-        return 1
+        return 0
     fi
 
     local total
@@ -146,8 +169,9 @@ test_client_account() {
 
     if [[ "$RESPONSE_CODE" -lt 200 || "$RESPONSE_CODE" -gt 299 ]]; then
         check_fail "Client API /account: HTTP $RESPONSE_CODE"
-        log_message "Ответ: $RESPONSE_BODY" "debug"
-        return 1
+        log_message "Ответ: $RESPONSE_BODY" "info"
+        explain_client_api_error "$RESPONSE_CODE" "$RESPONSE_BODY"
+        return 0
     fi
 
     local email
@@ -169,9 +193,9 @@ test_client_server_resources() {
 
     if [[ "$RESPONSE_CODE" -lt 200 || "$RESPONSE_CODE" -gt 299 ]]; then
         check_fail "Client API /resources: HTTP $RESPONSE_CODE (сервер $TEST_SERVER_ID)"
-        log_message "Ответ: $RESPONSE_BODY" "debug"
-        log_message "Возможные причины: Client API ключ не имеет доступа к этому серверу." "warning"
-        return 1
+        log_message "Ответ: $RESPONSE_BODY" "info"
+        explain_client_api_error "$RESPONSE_CODE" "$RESPONSE_BODY"
+        return 0
     fi
 
     local state
@@ -193,8 +217,9 @@ test_client_permissions() {
 
     if [[ "$RESPONSE_CODE" -lt 200 || "$RESPONSE_CODE" -gt 299 ]]; then
         check_fail "Client API /servers/{id}: HTTP $RESPONSE_CODE"
-        log_message "Ответ: $RESPONSE_BODY" "debug"
-        return 1
+        log_message "Ответ: $RESPONSE_BODY" "info"
+        explain_client_api_error "$RESPONSE_CODE" "$RESPONSE_BODY"
+        return 0
     fi
 
     local can_control can_command

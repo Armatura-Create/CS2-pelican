@@ -69,24 +69,32 @@ $BASE_DIR/server/
 
 ### Pelican API — ключи
 
-В панели Pelican: **Admin → API Credentials**.
+В панели Pelican нужны **два разных** ключа. Это не один и тот же токен.
 
-| Переменная | Где взять | Для чего |
+| Переменная | Где создать | Для чего |
 |---|---|---|
 | `PELICAN_URL` | URL панели без `/` в конце | Базовый адрес API |
-| `PELICAN_APP_TOKEN` | **Application API** ключ | Список серверов, фильтр по образу и ноде |
-| `PELICAN_API_TOKEN` | **Client API** ключ (аккаунт) | stop/start, команды `say`, статус сервера |
+| `PELICAN_APP_TOKEN` | **Admin** → API Credentials → **Application API** | Список серверов, фильтр по образу и ноде |
+| `PELICAN_API_TOKEN` | **Account** → API Credentials → **Client API** | stop/start, команды `say`, статус сервера |
 | `PELICAN_IMAGE` | Docker-образ из egg | Должен **точно совпадать** с образом серверов |
 | `PELICAN_NODE_ID` | ID ноды в панели | Фильтр серверов на конкретной машине |
 
+**Как создать Client API ключ (для `PELICAN_API_TOKEN`):**
+
+1. Войдите в панель под аккаунтом-владельцем серверов (или админом с доступом к ним).
+2. Откройте **Account** (профиль) → **API Credentials**.
+3. Вкладка **Client API** → **Create New API Key**.
+4. Скопируйте ключ в `PELICAN_API_TOKEN` в `.env`.
+
 **Важно:**
 
-- `PELICAN_APP_TOKEN` и `PELICAN_API_TOKEN` — **разные** ключи.
+- `PELICAN_APP_TOKEN` и `PELICAN_API_TOKEN` — **разные** ключи из разных разделов панели.
+- Если подставить Application ключ в `PELICAN_API_TOKEN`, Client API вернёт **HTTP 403**.
 - `PELICAN_IMAGE` должен совпадать с образом в egg, например:
   ```
   docker.io/scrender/base-files-cs2:latest
   ```
-- Client API ключ должен иметь права **control** и **command** на управляемые серверы.
+- Client API ключ должен принадлежать пользователю, у которого есть права **control** и **command** на управляемые серверы.
 
 Проверка ключей:
 
@@ -186,6 +194,15 @@ journalctl -u cs2-updater.service -f
 - Проверьте `PELICAN_NODE_ID` — ID ноды, на которой запущен сервер.
 
 ### Client API — HTTP 403
+
+Самая частая причина: в `PELICAN_API_TOKEN` указан **Application API** ключ вместо **Client API**.
+
+- `PELICAN_APP_TOKEN` → Admin → API Credentials → Application API
+- `PELICAN_API_TOKEN` → Account → API Credentials → Client API
+
+После создания Client ключа обновите `.env` и снова запустите `./test-pelican.sh`.
+
+### Client API — HTTP 403 (другие причины)
 
 - Client API ключ не имеет доступа к серверу.
 - Создайте ключ от аккаунта-владельца сервера или выдайте права.
