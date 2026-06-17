@@ -203,6 +203,21 @@ test_client_server_resources() {
     check_ok "Client API: статус сервера $TEST_SERVER_ID = $state"
 }
 
+has_permission() {
+    local permissions_json="$1"
+    local required="$2"
+
+    if [ "$(echo "$permissions_json" | jq -r 'if type == "array" then (index("*") != null) else false end')" = "true" ]; then
+        return 0
+    fi
+
+    if [ "$(echo "$permissions_json" | jq -r --arg p "$required" 'if type == "array" then (index($p) != null) else false end')" = "true" ]; then
+        return 0
+    fi
+
+    return 1
+}
+
 test_client_permissions() {
     if [ -z "${TEST_SERVER_ID:-}" ]; then
         check_warn "Пропускаем проверку прав — нет сервера для теста"
@@ -222,20 +237,27 @@ test_client_permissions() {
         return 0
     fi
 
-    local can_control can_command
-    can_control="$(echo "$RESPONSE_BODY" | jq -r '.attributes.relationships.permissions.attributes.control // "unknown"')"
-    can_command="$(echo "$RESPONSE_BODY" | jq -r '.attributes.relationships.permissions.attributes.command // "unknown"')"
+    local permissions_json is_owner
+    permissions_json="$(echo "$RESPONSE_BODY" | jq -c '.meta.user_permissions // []')"
+    is_owner="$(echo "$RESPONSE_BODY" | jq -r '.meta.is_server_owner // false')"
 
-    if [ "$can_control" = "true" ] || [ "$can_control" = "1" ]; then
-        check_ok "Есть право control (start/stop/restart)"
-    else
-        check_fail "Нет права control — updater не сможет останавливать/запускать серверы"
+    if [ "$is_owner" = "true" ]; then
+        log_message "Пользователь является владельцем сервера" "info"
     fi
 
-    if [ "$can_command" = "true" ] || [ "$can_command" = "1" ]; then
-        check_ok "Есть право command (say и др.)"
+    log_message "Права API: $(echo "$permissions_json" | jq -r 'join(", ")' 2>/dev/null || echo "$permissions_json")" "info"
+
+    if has_permission "$permissions_json" "control.start" \
+        && has_permission "$permissions_json" "control.stop"; then
+        check_ok "Есть права control (start/stop)"
     else
-        check_fail "Нет права command — updater не сможет оповещать игроков"
+        check_fail "Нет прав control.start / control.stop — updater не сможет останавливать/запускать серверы"
+    fi
+
+    if has_permission "$permissions_json" "control.console"; then
+        check_ok "Есть право control.console (команды say и др.)"
+    else
+        check_fail "Нет права control.console — updater не сможет оповещать игроков"
     fi
 }
 
