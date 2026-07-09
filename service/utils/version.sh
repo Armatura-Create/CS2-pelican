@@ -87,8 +87,7 @@ inform_players_and_wait() {
 
     # Берём список серверов, которые running
     local servers
-    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-}")"
-    # Если переменная не задана, будет ошибка => лучше в .env всегда задавать PELICAN_IMAGE
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-}")" || servers=""
 
     while IFS=' ' read -r seconds message || [ -n "$seconds" ]; do
         [[ "$seconds" =~ ^[0-9]+$ ]] || continue
@@ -123,17 +122,17 @@ inform_players_and_wait() {
 
 stop_running_servers_for_update() {
     # Останавливаем сервера, которые сейчас running
-    # Исп. тот же PELICAN_IMAGE
     local servers
-    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-}")"
+    servers="$(get_running_servers_by_image "${PELICAN_IMAGE:-}")" || servers=""
     if [ -z "$servers" ]; then
         echo ""
         return 0
     fi
 
     while IFS= read -r srv_id; do
+        [ -n "$srv_id" ] || continue
         log_message "Останавливаем сервер $srv_id" "running"
-        power_action "$srv_id" "stop"
+        power_action "$srv_id" "stop" || true
     done <<< "$servers"
 
     echo "$servers"
@@ -146,8 +145,9 @@ start_servers_with_delay() {
     fi
 
     while IFS= read -r srv_id; do
+        [ -n "$srv_id" ] || continue
         log_message "Запускаем сервер $srv_id" "running"
-        power_action "$srv_id" "start"
+        power_action "$srv_id" "start" || true
         sleep 10
     done <<< "$servers_list"
 }

@@ -38,24 +38,24 @@ main_loop() {
         if [ "$status" -eq 200 ]; then
             UPDATE_IN_PROGRESS=1
 
-            # 2.1) Ждём N секунд, оповещаем игроков
             local cd_time="${UPDATE_COUNTDOWN_TIME:-300}"
             log_message "Оповещаем игроков и ждём $cd_time сек. перед перезапуском..." "running"
+            set +e
             inform_players_and_wait "$cd_time"
 
-            # 2.2) Останавливаем сервера, которые были running
             log_message "Останавливаем нужные сервера..." "running"
             local running_list
             running_list="$(stop_running_servers_for_update)"
+            set -e
 
             sleep 10
 
-            # 2.3) Обновляем CS2 через SteamCMD
             install_or_update
 
-            # 2.4) Запускаем те, что были running
             log_message "Запускаем обратно остановленные сервера..." "running"
+            set +e
             start_servers_with_delay "$running_list"
+            set -e
 
             UPDATE_IN_PROGRESS=0
         fi

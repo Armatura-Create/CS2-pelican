@@ -287,6 +287,33 @@ journalctl -u cs2-updater.service -f
 
 Типичная ошибка: mount создан в панели, но **не добавлен `allowed_mounts`** в Wings — контейнер видит пустой `/mnt`.
 
+### Application API — HTTP 404 при обновлении
+
+Updater не может получить список серверов. Проверьте на хосте:
+
+```bash
+grep PELICAN /path/to/service/.env
+./test-pelican.sh
+```
+
+Частые причины:
+
+- неверный `PELICAN_URL` (опечатка, лишний путь, `/` в конце)
+- истёк или отозван `PELICAN_APP_TOKEN`
+- панель недоступна с этого хоста (`ns3170054` ≠ другой сервер с рабочим `.env`)
+
+Пример правильного `.env`:
+
+```env
+PELICAN_URL="https://gameserv.vortanode.com"
+PELICAN_APP_TOKEN="ключ из Admin → Application API"
+PELICAN_API_TOKEN="ключ из Account → Client API"
+PELICAN_IMAGE="docker.io/scrender/base-files-cs2:latest"
+PELICAN_NODE_ID="2"
+```
+
+После обновления скриптов updater **не падает** при ошибке Pelican API — продолжит SteamCMD-обновление, но не сможет stop/start серверы и `say`-оповещения.
+
 ### systemd: `Is a directory`
 
 Исправлено в текущей версии `install.sh`. Переустановите:

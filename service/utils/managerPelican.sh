@@ -7,6 +7,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
 # ВАЖНО: теперь используем PELICAN_IMAGE без дефолта "dev" или "latest"
 # Чтобы не возникало ситуаций, что stop ищет одни, а start ищет другие.
 
+pelican_base_url() {
+    echo "${PELICAN_URL%/}"
+}
+
 get_servers_by_image_app() {
     local image_filter="${1:-}"
     if [ -z "$image_filter" ]; then
@@ -24,20 +28,27 @@ get_servers_by_image_app() {
         return 1
     fi
 
-    local response
+    local base_url api_url response body http_code
+    base_url="$(pelican_base_url)"
+    api_url="${base_url}/api/application/servers?per_page=100"
+
     response="$(curl -s -w "\n%{http_code}" \
         -H "Authorization: Bearer $PELICAN_APP_TOKEN" \
         -H "Accept: application/json" \
-        "${PELICAN_URL}/api/application/servers?per_page=100")"
+        "$api_url")"
 
-    local body
     body="$(echo "$response" | head -n -1)"
-    local http_code
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
         log_message "Не удалось получить список серверов (application API), HTTP $http_code" "error"
-        log_message "Ответ: $body" "debug"
+        log_message "URL: $api_url" "warning"
+        if [ -n "$body" ]; then
+            log_message "Ответ: $body" "warning"
+        fi
+        if [ "$http_code" = "404" ]; then
+            log_message "404 — проверьте PELICAN_URL в .env (без лишнего пути, без / в конце) и ./test-pelican.sh" "warning"
+        fi
         return 1
     fi
 
@@ -73,15 +84,14 @@ is_server_running_client() {
         return 1
     fi
 
-    local response
+    local response body http_code base_url
+    base_url="$(pelican_base_url)"
     response="$(curl -s -w "\n%{http_code}" \
       -H "Authorization: Bearer $PELICAN_API_TOKEN" \
       -H "Accept: application/json" \
-      "${PELICAN_URL}/api/client/servers/${identifier}/resources")"
+      "${base_url}/api/client/servers/${identifier}/resources")"
 
-    local body
     body="$(echo "$response" | head -n -1)"
-    local http_code
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
@@ -106,7 +116,11 @@ get_running_servers_by_image() {
     fi
 
     local all_servers
-    all_servers="$(get_servers_by_image_app "$image_filter")" || return 1
+    all_servers="$(get_servers_by_image_app "$image_filter")" || {
+        log_message "Pelican API недоступен — продолжаем без управления серверами." "warning"
+        echo ""
+        return 0
+    }
     if [ -z "$all_servers" ]; then
         echo ""
         return 0
@@ -142,22 +156,21 @@ send_command() {
         return 0
     fi
 
-    local response
+    local response body http_code base_url
+    base_url="$(pelican_base_url)"
     response="$(curl -s -w "\n%{http_code}" -X POST \
       -H "Authorization: Bearer $PELICAN_API_TOKEN" \
       -H "Content-Type: application/json" \
       --data "{\"command\":\"$command\"}" \
-      "${PELICAN_URL}/api/client/servers/$server_identifier/command")"
+      "${base_url}/api/client/servers/$server_identifier/command")"
 
-    local body
     body="$(echo "$response" | head -n -1)"
-    local http_code
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
         log_message "Ошибка отправки команды [$command] на сервер $server_identifier, HTTP $http_code" "error"
         log_message "Ответ: $body" "debug"
-        return 1
+        return 0
     fi
 
     log_message "Отправлена команда [$command] на сервер $server_identifier" "debug"
@@ -178,24 +191,23 @@ power_action() {
         return 1
     fi
 
-    local response
+    local response body http_code base_url
+    base_url="$(pelican_base_url)"
     response="$(curl -s -w "\n%{http_code}" \
-      "${PELICAN_URL}/api/client/servers/$server_identifier/power" \
+      "${base_url}/api/client/servers/$server_identifier/power" \
       -H "Accept: application/json" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $PELICAN_API_TOKEN" \
       -X POST \
       -d "{\"signal\": \"$action\"}")"
 
-    local body
     body="$(echo "$response" | head -n -1)"
-    local http_code
     http_code="$(echo "$response" | tail -n1)"
 
     if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
         log_message "Сбой power_action '$action' на сервере $server_identifier (HTTP $http_code)" "error"
         log_message "Ответ: $body" "debug"
-        return 1
+        return 0
     fi
 
     log_message "Выполнен power_action [$action] на сервере $server_identifier" "debug"
