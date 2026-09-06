@@ -4,11 +4,40 @@ trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
 
-# ВАЖНО: теперь используем PELICAN_IMAGE без дефолта "dev" или "latest"
-# Чтобы не возникало ситуаций, что stop ищет одни, а start ищет другие.
+# ВАЖНО: используем PELICAN_IMAGE без дефолта "dev"/"latest",
+# чтобы stop и start не искали разные образы.
 
 pelican_base_url() {
     echo "${PELICAN_URL%/}"
+}
+
+# Один запрос к API. Результат кладём в PELICAN_BODY / PELICAN_CODE.
+# Транспортная ошибка curl (DNS, обрыв, таймаут) даёт код 000: без `|| raw=...`
+# неудачное присваивание под `set -e` роняло весь updater.
+PELICAN_BODY=""
+PELICAN_CODE="000"
+pelican_request() {
+    local method="$1" url="$2" token="$3" data="${4:-}"
+
+    local -a args=(
+        -sS --connect-timeout 10 --max-time 30
+        -w $'\n%{http_code}'
+        -X "$method"
+        -H "Authorization: Bearer $token"
+        -H "Accept: application/json"
+    )
+    [ -n "$data" ] && args+=(-H "Content-Type: application/json" --data "$data")
+
+    local raw
+    raw="$(curl "${args[@]}" "$url" 2>/dev/null)" || raw=$'\n000'
+
+    PELICAN_BODY="$(printf '%s' "$raw" | head -n -1)"
+    PELICAN_CODE="$(printf '%s' "$raw" | tail -n1)"
+    [ -n "$PELICAN_CODE" ] || PELICAN_CODE="000"
+}
+
+pelican_ok() {
+    [[ "$PELICAN_CODE" =~ ^2[0-9][0-9]$ ]]
 }
 
 get_servers_by_image_app() {
@@ -28,32 +57,23 @@ get_servers_by_image_app() {
         return 1
     fi
 
-    local base_url api_url response body http_code
-    base_url="$(pelican_base_url)"
-    api_url="${base_url}/api/application/servers?per_page=100"
+    local api_url
+    api_url="$(pelican_base_url)/api/application/servers?per_page=100"
+    pelican_request GET "$api_url" "$PELICAN_APP_TOKEN"
 
-    response="$(curl -s -w "\n%{http_code}" \
-        -H "Authorization: Bearer $PELICAN_APP_TOKEN" \
-        -H "Accept: application/json" \
-        "$api_url")"
-
-    body="$(echo "$response" | head -n -1)"
-    http_code="$(echo "$response" | tail -n1)"
-
-    if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Не удалось получить список серверов (application API), HTTP $http_code" "error"
+    if ! pelican_ok; then
+        log_message "Не удалось получить список серверов (application API), HTTP $PELICAN_CODE" "error"
         log_message "URL: $api_url" "warning"
-        if [ -n "$body" ]; then
-            log_message "Ответ: $body" "warning"
-        fi
-        if [ "$http_code" = "404" ]; then
-            log_message "404 — проверьте PELICAN_URL в .env (без лишнего пути, без / в конце) и ./test-pelican.sh" "warning"
-        fi
+        [ -n "$PELICAN_BODY" ] && log_message "Ответ: $PELICAN_BODY" "warning"
+        case "$PELICAN_CODE" in
+            000) log_message "Панель недоступна с этого хоста (сеть, DNS или таймаут)." "warning" ;;
+            404) log_message "404 — проверьте PELICAN_URL в .env (без лишнего пути и / в конце) и ./test-pelican.sh" "warning" ;;
+        esac
         return 1
     fi
 
     local server_ids
-    server_ids="$(echo "$body" | jq -r \
+    server_ids="$(echo "$PELICAN_BODY" | jq -r \
         --arg IMG "$image_filter" \
         --argjson NODE "$PELICAN_NODE_ID" '
         .data[]
@@ -62,12 +82,7 @@ get_servers_by_image_app() {
             and .attributes.node == $NODE
         )
         | .attributes.identifier
-    ')"
-
-    if [ -z "$server_ids" ]; then
-        echo ""
-        return 0
-    fi
+    ' 2>/dev/null || true)"
 
     echo "$server_ids"
 }
@@ -84,28 +99,19 @@ is_server_running_client() {
         return 1
     fi
 
-    local response body http_code base_url
-    base_url="$(pelican_base_url)"
-    response="$(curl -s -w "\n%{http_code}" \
-      -H "Authorization: Bearer $PELICAN_API_TOKEN" \
-      -H "Accept: application/json" \
-      "${base_url}/api/client/servers/${identifier}/resources")"
+    pelican_request GET \
+        "$(pelican_base_url)/api/client/servers/${identifier}/resources" \
+        "$PELICAN_API_TOKEN"
 
-    body="$(echo "$response" | head -n -1)"
-    http_code="$(echo "$response" | tail -n1)"
-
-    if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Не удалось получить статус сервера (client API) $identifier, HTTP $http_code" "error"
-        log_message "Ответ: $body" "debug"
+    if ! pelican_ok; then
+        log_message "Не удалось получить статус сервера (client API) $identifier, HTTP $PELICAN_CODE" "error"
+        log_message "Ответ: $PELICAN_BODY" "debug"
         return 1
     fi
 
     local current_state
-    current_state="$(echo "$body" | jq -r '.attributes.current_state')"
-    if [ "$current_state" = "running" ]; then
-        return 0
-    fi
-    return 1
+    current_state="$(echo "$PELICAN_BODY" | jq -r '.attributes.current_state // empty' 2>/dev/null || true)"
+    [ "$current_state" = "running" ]
 }
 
 get_running_servers_by_image() {
@@ -128,17 +134,22 @@ get_running_servers_by_image() {
 
     local running_list=""
     while IFS= read -r identifier; do
+        [ -n "$identifier" ] || continue
         if is_server_running_client "$identifier"; then
             running_list+="$identifier"$'\n'
         fi
     done <<< "$all_servers"
 
-    echo "$running_list"
+    printf '%s' "$running_list"
 }
 
+# send_command <id> <команда> [skip_state_check]
+# Третий аргумент пропускает опрос статуса сервера — для циклов, где список
+# running получен заранее и лишний запрос на каждую итерацию не нужен.
 send_command() {
     local server_identifier="$1"
     local command="$2"
+    local skip_state_check="${3:-}"
 
     if [ -z "$server_identifier" ] || [ -z "$command" ]; then
         log_message "send_command: не указаны server_identifier или command" "error"
@@ -150,26 +161,24 @@ send_command() {
         return 1
     fi
 
-    # Доп. проверка: сервер запущен?
-    if ! is_server_running_client "$server_identifier"; then
-        log_message "Сервер $server_identifier не в статусе running. Пропускаем команду [$command]." "debug"
-        return 0
+    if [ "$skip_state_check" != "skip_state_check" ]; then
+        if ! is_server_running_client "$server_identifier"; then
+            log_message "Сервер $server_identifier не в статусе running. Пропускаем команду [$command]." "debug"
+            return 0
+        fi
     fi
 
-    local response body http_code base_url
-    base_url="$(pelican_base_url)"
-    response="$(curl -s -w "\n%{http_code}" -X POST \
-      -H "Authorization: Bearer $PELICAN_API_TOKEN" \
-      -H "Content-Type: application/json" \
-      --data "{\"command\":\"$command\"}" \
-      "${base_url}/api/client/servers/$server_identifier/command")"
+    # jq вместо ручной склейки: кавычка в тексте сообщения ломала JSON
+    local payload
+    payload="$(jq -nc --arg cmd "$command" '{command: $cmd}')"
 
-    body="$(echo "$response" | head -n -1)"
-    http_code="$(echo "$response" | tail -n1)"
+    pelican_request POST \
+        "$(pelican_base_url)/api/client/servers/$server_identifier/command" \
+        "$PELICAN_API_TOKEN" "$payload"
 
-    if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Ошибка отправки команды [$command] на сервер $server_identifier, HTTP $http_code" "error"
-        log_message "Ответ: $body" "debug"
+    if ! pelican_ok; then
+        log_message "Ошибка отправки команды [$command] на сервер $server_identifier, HTTP $PELICAN_CODE" "error"
+        log_message "Ответ: $PELICAN_BODY" "debug"
         return 0
     fi
 
@@ -191,22 +200,16 @@ power_action() {
         return 1
     fi
 
-    local response body http_code base_url
-    base_url="$(pelican_base_url)"
-    response="$(curl -s -w "\n%{http_code}" \
-      "${base_url}/api/client/servers/$server_identifier/power" \
-      -H "Accept: application/json" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $PELICAN_API_TOKEN" \
-      -X POST \
-      -d "{\"signal\": \"$action\"}")"
+    local payload
+    payload="$(jq -nc --arg sig "$action" '{signal: $sig}')"
 
-    body="$(echo "$response" | head -n -1)"
-    http_code="$(echo "$response" | tail -n1)"
+    pelican_request POST \
+        "$(pelican_base_url)/api/client/servers/$server_identifier/power" \
+        "$PELICAN_API_TOKEN" "$payload"
 
-    if [[ "$http_code" -lt 200 || "$http_code" -gt 299 ]]; then
-        log_message "Сбой power_action '$action' на сервере $server_identifier (HTTP $http_code)" "error"
-        log_message "Ответ: $body" "debug"
+    if ! pelican_ok; then
+        log_message "Сбой power_action '$action' на сервере $server_identifier (HTTP $PELICAN_CODE)" "error"
+        log_message "Ответ: $PELICAN_BODY" "debug"
         return 0
     fi
 
