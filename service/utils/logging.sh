@@ -96,18 +96,18 @@ log_message() {
     fi
 }
 
+# ВАЖНО: только логируем и возвращаем код.
+# ERR-трап срабатывает даже при `set +e` (и наследуется в функции из-за `set -E`),
+# поэтому `exit` здесь убивал весь updater на любой сетевой осечке curl.
 handle_error() {
     local exit_code=$?
     local line_number="${1:-}"
     local last_command="${2:-$BASH_COMMAND}"
 
-    # Если хотим пропускать коды 200,404,500, оставляем
-    if [[ "$exit_code" -eq 200 || "$exit_code" -eq 404 || "$exit_code" -eq 500 ]]; then
-        return "$exit_code"
-    fi
-
-    if [ "$exit_code" -ne 0 ]; then
-        log_message "Ошибка в строке $line_number: $last_command (код $exit_code)" "error"
-    fi
-    exit "$exit_code"
+    case $exit_code in
+        0) return 0 ;;
+        127) log_message "Команда не найдена: $last_command" "error" ;;
+        *)   log_message "Ошибка в строке $line_number: $last_command (код $exit_code)" "error" ;;
+    esac
+    return "$exit_code"
 }

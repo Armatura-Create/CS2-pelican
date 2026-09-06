@@ -58,4 +58,13 @@ bin/
 obj/
 *.sln
 
+.idea/
+
+# Служебные каталоги инструментов
 .cursor/
+.serena/
+graphify-out/
+
+# Секреты host-updater'а
+service/.env
+service/logs/

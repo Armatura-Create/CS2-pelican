@@ -1,6 +1,9 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+# Работаем от каталога скрипта, чтобы запуск из другого cwd не ломал пути
+cd "$(dirname "$(readlink -f "$0")")"
+
 source "./utils/logging.sh"
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -27,7 +30,8 @@ prompt_required() {
         if [ -z "$val" ]; then
             log_message "$error_msg" "error"
         else
-            eval "$var_name=\"$val\""
+            # printf -v, а не eval: eval исполнял бы ввод пользователя
+            printf -v "$var_name" '%s' "$val"
             break
         fi
     done
@@ -45,13 +49,16 @@ prompt_with_default() {
     if [ -z "$val" ]; then
         val="$default_val"
     fi
-    eval "$var_name=\"$val\""
+    printf -v "$var_name" '%s' "$val"
 }
 
 ########################################
 # Создание файла .env
 ########################################
 create_env_file() {
+    # 600 ДО записи: в .env лежат пароль Steam и оба токена Pelican
+    rm -f .env
+    (umask 077; : > .env)
     cat <<EOF > .env
 BASE_DIR="$BASE_DIR"
 SRCDS_APPID="$SRCDS_APPID"
@@ -73,7 +80,8 @@ LOG_LEVEL="$LOG_LEVEL"
 LOG_FILE_ENABLED="$LOG_FILE_ENABLED"
 EOF
 
-    log_message ".env файл создан/обновлён." "success"
+    chmod 600 .env
+    log_message ".env файл создан/обновлён (права 600)." "success"
 }
 
 ########################################
@@ -102,8 +110,8 @@ main() {
         "Steam User (STEAM_USER)" \
         "anonymous"
 
-    read -rp "Steam Pass (STEAM_PASS) (можно пусто): " STEAM_PASS
-    read -rp "Steam Auth (STEAM_AUTH) (можно пусто): " STEAM_AUTH
+    read -rsp "Steam Pass (STEAM_PASS) (можно пусто, ввод скрыт): " STEAM_PASS; echo
+    read -rsp "Steam Auth (STEAM_AUTH) (можно пусто, ввод скрыт): " STEAM_AUTH; echo
     read -rp "EXTRA_FLAGS (для SteamCMD, можно пусто): " EXTRA_FLAGS
 
     prompt_required PELICAN_URL \
@@ -145,6 +153,9 @@ main() {
     # 3) Создаём .env
     create_env_file
 
+    # systemd запускает start.sh напрямую — бит выполнения обязателен
+    chmod +x start.sh test-pelican.sh
+
     # 4) Создаём systemd unit
     local service_dir
     service_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -161,6 +172,7 @@ main() {
     sudo tee "/etc/systemd/system/${SERVICE_NAME}" > /dev/null <<EOF
 [Unit]
 Description=CS2 Updater Service
+Wants=network-online.target
 After=network-online.target
 
 [Service]

@@ -28,10 +28,6 @@ EOL
         log_message "Создан дефолтный /home/container/game/mute_messages.cfg" "running"
     fi
 
-    # Если нужно маскировать STEAM_ACC, превращаем в «********»
-    if [ -n "${STEAM_ACC:-}" ]; then
-        REGEX_PATTERNS["${STEAM_ACC}"]="********"
-    fi
 
     local pattern_count=0
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -66,6 +62,13 @@ handle_server_output() {
     local blocked=false
     local modified_line="$line"
 
+    # Маскируем GSLT буквальной подстановкой. Раньше токен клался в
+    # REGEX_PATTERNS и подставлялся через sed -E "s/$regex/.../" — спецсимвол
+    # в значении ломал sed или менял смысл выражения.
+    if [ -n "${STEAM_ACC:-}" ]; then
+        modified_line="${modified_line//"$STEAM_ACC"/********}"
+    fi
+
     # 1) Exact matchЫ
     for exact_pattern in "${!EXACT_PATTERNS[@]}"; do
         if [[ "$line" == "$exact_pattern" ]]; then
@@ -77,18 +80,9 @@ handle_server_output() {
     # 2) Regex-совпадения (если не заблокировано exact-совпадением)
     if [ "$blocked" = false ]; then
         for regex in "${!REGEX_PATTERNS[@]}"; do
-            local action="${REGEX_PATTERNS[$regex]}"
             if [[ "$line" =~ $regex ]]; then
-                if [[ "$action" == "1" ]]; then
-                    # Полный блок
-                    blocked=true
-                    break
-                else
-                    # Заменяем на action
-                    local replacement
-                    replacement="$(printf '%s' "$action" | sed 's/[&/\]/\\&/g')"
-                    modified_line="$(printf '%s' "$modified_line" | sed -E "s/$regex/$replacement/g")"
-                fi
+                blocked=true
+                break
             fi
         done
     fi
@@ -96,8 +90,8 @@ handle_server_output() {
     # 3) Вывод
     if [ "$blocked" = true ]; then
         if [ "${FILTER_PREVIEW_MODE:-0}" = "1" ]; then
-            # В режиме превью показываем в логах, что строка заблокирована
-            log_message "Заблокированная строка (PREVIEW): $line" "debug"
+            # В режиме превью показываем строку, чтобы можно было проверить фильтр
+            log_message "Заблокированная строка (PREVIEW): $modified_line" "warning"
         fi
         # В консоль не выводим
     else

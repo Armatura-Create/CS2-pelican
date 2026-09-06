@@ -78,7 +78,7 @@ log_message() {
             printf "%b[DEBUG] %s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
         info|*)
             printf "%b[INFO] %s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
-    esac
+    esac >&2
 
     if [[ "$LOG_FILE_ENABLED" == "1" ]]; then
         echo "[$timestamp] [$type] $message" >> "$LOG_FILE"

@@ -2,38 +2,34 @@ _comment: 'DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL'
 meta:
   version: PLCN_v3
   update_url: null
-exported_at: '2025-12-11T09:14:57+00:00'
-name: 'CS2 with base files'
+exported_at: '2026-09-06T17:59:27+00:00'
+name: CS2 with base files
 author: alext303@gmail.com
 uuid: 7d6ee663-9f1f-416b-bed2-75c999d4c0c3
-description: |-
-  Egg for start server with one instance game files
-  Create mount 
-  source: /home/cs2_base/server
-  target: /mnt
+description: "Egg for start server with one instance game files\nCreate mount \nsource: /home/cs2_base/server\ntarget: /mnt"
 image: null
 tags:
-  - 'Counter Strike 2'
+- Counter Strike 2
 features:
-  - 'low space'
-  - cs2
+- low space
+- cs2
 docker_images:
-  ServUp_BaseFiles: 'docker.io/scrender/base-files-cs2:latest'
-  ServUp_BaseFiles_DEV: 'docker.io/scrender/base-files-cs2:dev'
-file_denylist: {  }
+  ServUp_BaseFiles: docker.io/scrender/base-files-cs2:latest
+  ServUp_BaseFiles_DEV: docker.io/scrender/base-files-cs2:dev
+file_denylist: {}
 startup_commands:
-  Default: './game/cs2.sh -dedicated -strictportbind +ip $( [ "$RCON_ENABLED" == "1" ] && printf ''%s'' ''0.0.0.0'' || printf ''%s'' ''{{SERVER_IP}}'' ) -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} -maxplayers_override {{SRCDS_MAXPLAYERS}} -norestart $( [ "$VAC_ENABLED" == "1" ] && printf ''%s'' ''-secure'' || printf ''%s'' ''-insecure'' ) $( [ "$BOTS_ENABLED" == "1" ] || printf ''%s'' '' -nobots'' ) $( [ "$RCON_ENABLED" == "1" ] || printf ''%s'' '' -usercon'' ) $( [ "$TV_ENABLED" == "1" ] && printf ''%s'' " +tv_enable 1 +tv_port $((SERVER_PORT + 1001)) +tv_maxclients {{TV_MAX_CLIENTS}} +tv_delay {{TV_DELAY}} +tv_name {{TV_NAME}} +tv_relayvoice 1 +tv_delaymapchange 1" ) $( [ -n "{{STEAM_ACC}}" ] && printf ''%s'' " +sv_setsteamaccount {{STEAM_ACC}}" ) +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}} $( [ -n "{{WORKSHOP_MAP_ID}}" ] && printf ''%s'' " +host_workshop_map {{WORKSHOP_MAP_ID}}" ) $( [ -n "{{WORKSHOP_COLLECTIONS_ID}}" ] && printf ''%s'' " +host_workshop_collection {{WORKSHOP_COLLECTIONS_ID}}" ) $( [ -n "{{MAP_GROUP}}" ] && printf ''%s'' " +mapgroup {{MAP_GROUP}}" ) +servercfgfile {{CFG_FILE}} {{CUSTOM_PARAMS}} $( [ "$DEBUG" == "0" ] || printf ''%s'' '' -debug'' )'
+  Default: ./game/cs2.sh -dedicated -strictportbind +ip $( [ "$RCON_ENABLED" == "1" ] && printf '%s' '0.0.0.0' || printf '%s' '{{SERVER_IP}}' ) -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} -maxplayers_override {{SRCDS_MAXPLAYERS}} -norestart $( [ "$VAC_ENABLED" == "1" ] && printf '%s' '-secure' || printf '%s' '-insecure' ) $( [ "$BOTS_ENABLED" == "1" ] || printf '%s' ' -nobots' ) $( [ "$RCON_ENABLED" == "1" ] && printf '%s' ' -usercon' ) $( [ "$TV_ENABLED" == "1" ] && printf '%s' " +tv_enable 1 +tv_port $((SERVER_PORT + 1001)) +tv_maxclients {{TV_MAX_CLIENTS}} +tv_delay {{TV_DELAY}} +tv_name {{TV_NAME}} +tv_relayvoice 1 +tv_delaymapchange 1" ) $( [ -n "{{STEAM_ACC}}" ] && printf '%s' " +sv_setsteamaccount {{STEAM_ACC}}" ) +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}} $( [ -n "{{WORKSHOP_MAP_ID}}" ] && printf '%s' " +host_workshop_map {{WORKSHOP_MAP_ID}}" ) $( [ -n "{{WORKSHOP_COLLECTIONS_ID}}" ] && printf '%s' " +host_workshop_collection {{WORKSHOP_COLLECTIONS_ID}}" ) $( [ -n "{{MAP_GROUP}}" ] && printf '%s' " +mapgroup {{MAP_GROUP}}" ) +servercfgfile {{CFG_FILE}} {{CUSTOM_PARAMS}} $( [ "$DEBUG" == "0" ] || printf '%s' ' -debug' )
 config:
   files:
-    'game/csgo/cfg/{{CFG_FILE}}':
+    game/csgo/cfg/{{CFG_FILE}}:
       parser: file
       find:
-        rcon_password: 'rcon_password "{{env.RCON_PASSWORD}}"'
-        hostname: 'hostname "{{env.HOST_NAME}}"'
-        sv_tags: 'sv_tags "{{env.SERVER_TAGS}}"'
+        rcon_password: rcon_password "{{env.RCON_PASSWORD}}"
+        hostname: hostname "{{env.HOST_NAME}}"
+        sv_tags: sv_tags "{{env.SERVER_TAGS}}"
   startup:
-    done: 'Connection to Steam servers successful'
-  logs: {  }
+    done: Connection to Steam servers successful
+  logs: {}
   stop: quit
 scripts:
   installation:
@@ -41,402 +37,414 @@ scripts:
       #!/bin/bash
 
       echo "Start installing"
-    container: 'ghcr.io/pelican-eggs/installers:debian'
+    container: ghcr.io/pelican-eggs/installers:debian
     entrypoint: bash
 variables:
-  -
-    sort: 15
-    name: 'Bots Enable'
-    description: |-
-      Включить / отключить ботов на вашем сервере. По
-      умолчанию эта опция включена.
-    env_variable: BOTS_ENABLED
-    default_value: 1
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 21
-    name: 'Name Config File'
-    description: 'Конфигурация сервера по умолчанию, например, cs2server.cfg'
-    env_variable: CFG_FILE
-    default_value: cs2server.cfg
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - string
-  -
-    sort: 13
-    name: 'Junk Cleaner - Enabled'
-    description: |-
-      Автоматически очищает логи через 72 часа, файлы демо
-      через 7 дней и резервные копии раундов через 24 часа.
-    env_variable: CLEANUP_ENABLED
-    default_value: 1
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 10
-    name: 'Auto Update - CounterStrikeSharp'
-    description: |-
-      Включить или отключить автоматическое обновление
-      CounterStrikeSharp при каждом запуске сервера. Link:
-      https://github.com/roflmuffin/CounterStrikeSharp
-    env_variable: CSS_AUTOUPDATE
-    default_value: 1
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 0
-    name: 'Auto Update - Swiftly'
-    description: |-
-      Включить или отключить автоматическое обновление
-      Swiftly (SwiftlyS2) при каждом запуске сервера. Link:
-      https://github.com/swiftly-solution/swiftlys2
-    env_variable: SWIFTLY_AUTOUPDATE
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 14
-    name: 'Custom Parameters'
-    description: |-
-      Пользовательские параметры запуска, которые нужно
-      добавить в строку запуска сервере
-    env_variable: CUSTOM_PARAMS
-    default_value: ''
-    user_viewable: true
-    user_editable: true
-    rules:
-      - string
-      - nullable
-  -
-    sort: 27
-    name: Debug
-    description: |-
-      Включить режим отладки. ЕСЛИ ВЫ НЕ ЗНАЕТЕ, ДЛЯ ЧЕГО ЭТО
-      НУЖНО, НЕ ВКЛЮЧАЙТЕ!
-    env_variable: DEBUG
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 11
-    name: 'Filter - Enabled'
-    description: |-
-      Включить или отключить фильтр консоли, чтобы скрыть
-      определенные сообщения. Настройте его с помощью файла
-      '/game/mute_messages.cfg', если включено.
-    env_variable: ENABLE_FILTER
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 12
-    name: 'Filter - Preview Mode'
-    description: |-
-      Включить или отключить режим предварительного
-      просмотра для фильтра консоли. В режиме
-      предварительного просмотра заблокированные
-      сообщения отображаются красным цветом, что позволяет
-      вам проверить конфигурацию фильтра.
-    env_variable: FILTER_PREVIEW_MODE
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 5
-    name: 'Game Mode'
-    description: |-
-      Это параметр, который определяет режим игры на
-      сервере. Подробнее: 
-      https://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types
-    env_variable: GAME_MODE
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - integer
-      - 'in:0,1,2,3,4'
-  -
-    sort: 6
-    name: 'Game Type'
-    description: |-
-      Это параметр, который определяет тип игры на сервере.
-      Подробнее: 
-      https://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types
-    env_variable: GAME_TYPE
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - integer
-      - 'in:0,1,2,3,4,5,6'
-  -
-    sort: 1
-    name: 'Host Name'
-    description: |-
-      Название игрового сервера, отображаемое в списке
-      серверов CS2
-    env_variable: HOST_NAME
-    default_value: 'ServUp CS2'
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - string
-  -
-    sort: 26
-    name: 'Egg - File Logging'
-    description: |-
-      Записывайте сообщения Egg в /egg.log, где они хранятся в
-      течение 48 часов.
-    env_variable: LOG_FILE_ENABLED
-    default_value: 0
-    user_viewable: false
-    user_editable: false
-    rules:
-      - boolean
-  -
-    sort: 25
-    name: 'Egg - Log Level'
-    description: |-
-      Уровень журнала для отображения Egg в консоли и файле
-      журнала.
-    env_variable: LOG_LEVEL
-    default_value: INFO
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - string
-      - 'in:INFO,WARNING,ERROR,DEBUG'
-  -
-    sort: 20
-    name: 'MAP GROUP'
-    description: 'Например, mb_bomb'
-    env_variable: MAP_GROUP
-    default_value: ''
-    user_viewable: true
-    user_editable: true
-    rules:
-      - string
-      - nullable
-  -
-    sort: 9
-    name: 'Auto Update - MetaMod'
-    description: |-
-      Включить или отключить автоматическое обновление Metamod
-      при каждом запуске сервера. Link:
-      https://www.metamodsource.net/downloads.php/?branch=master
-    env_variable: METAMOD_AUTOUPDATE
-    default_value: 1
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 18
-    name: 'Using Rcon'
-    description: |-
-      Включить / отключить RCON для использования RCON-команд с
-      внешними инструментами. По умолчанию эта опция
-      отключена.
-    env_variable: RCON_ENABLED
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 19
-    name: 'Rcon Password'
-    description: |-
-      Пароль для удаленного администрование сервера
-      (Работает если включен <USING RCON>)
-    env_variable: RCON_PASSWORD
-    default_value: ''
-    user_viewable: true
-    user_editable: true
-    rules:
-      - nullable
-      - string
-  -
-    sort: 2
-    name: 'Server Tags'
-    description: 'Тэги сервера'
-    env_variable: SERVER_TAGS
-    default_value: 'knife,gloves,agents,music,cs2,de_mirage,de_dust2,secure,servup'
-    user_viewable: true
-    user_editable: true
-    rules:
-      - string
-      - nullable
-  -
-    sort: 23
-    name: 'Source AppID'
-    description: 'НЕ ВИДИМО ДЛЯ ПОЛЬЗОВАТЕЛЕЙ. НЕ ИЗМЕНЯТЬ.'
-    env_variable: SRCDS_APPID
-    default_value: 730
-    user_viewable: false
-    user_editable: false
-    rules:
-      - required
-      - numeric
-  -
-    sort: 3
-    name: Map
-    description: |-
-      Стартовая карта для сервера. Примеры: de_dust2, de_mirage, de_nuke,
-      de_overpass, de_inferno, de_ancient, de_vertigo, de_anubis, cs_italy, cs_office Гонка
-      вооружений: ar_baggage, ar_shoots
-    env_variable: SRCDS_MAP
-    default_value: de_mirage
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - string
-      - alpha_dash
-  -
-    sort: 7
-    name: 'Max Players'
-    description: 'Максимальное количество слотов на сервере'
-    env_variable: SRCDS_MAXPLAYERS
-    default_value: 32
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - integer
-  -
-    sort: 24
-    name: 'Validate Install'
-    description: |-
-      Включает или отключает проверку файлов игрового
-      сервера через SteamCMD. Установите значение 0, чтобы
-      отключить.
-    env_variable: SRCDS_VALIDATE
-    default_value: 0
-    user_viewable: false
-    user_editable: false
-    rules:
-      - required
-      - integer
-      - 'in:0,1'
-  -
-    sort: 4
-    name: 'Game Server Login Token (GSLT)'
-    description: |-
-      Токен учетной записи Steam, необходимый для публичного
-      отображения сервера. https://steamcommunity.com/dev/managegameservers
-    env_variable: STEAM_ACC
-    default_value: ''
-    user_viewable: true
-    user_editable: true
-    rules:
-      - 'max:32'
-      - nullable
-  -
-    sort: 31
-    name: 'TV Delay'
-    description: ''
-    env_variable: TV_DELAY
-    default_value: 300
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - integer
-  -
-    sort: 28
-    name: 'TV Enabled'
-    description: ''
-    env_variable: TV_ENABLED
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 30
-    name: 'TV Max Clients'
-    description: ''
-    env_variable: TV_MAX_CLIENTS
-    default_value: 16
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - integer
-  -
-    sort: 29
-    name: 'TV Name'
-    description: ''
-    env_variable: TV_NAME
-    default_value: 'ServUp TV'
-    user_viewable: true
-    user_editable: true
-    rules:
-      - required
-      - string
-  -
-    sort: 22
-    name: 'Config file updater'
-    description: 'Обновляем файл конфигурации если нужно'
-    env_variable: UPDATE_CFG_FILE
-    default_value: 0
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 8
-    name: 'Valve Anti-Cheat'
-    description: |-
-      Включить или отключить Valve Anti-Cheat на вашем сервере. По
-      умолчанию — Включено.
-    env_variable: VAC_ENABLED
-    default_value: 1
-    user_viewable: true
-    user_editable: true
-    rules:
-      - boolean
-  -
-    sort: 16
-    name: 'Workshop Collections'
-    description: 'ID коллекции из Workshop'
-    env_variable: WORKSHOP_COLLECTIONS_ID
-    default_value: ''
-    user_viewable: true
-    user_editable: true
-    rules:
-      - string
-      - nullable
-  -
-    sort: 17
-    name: 'Workshop Map'
-    description: 'Запуск карты по ID из Workshop'
-    env_variable: WORKSHOP_MAP_ID
-    default_value: ''
-    user_viewable: true
-    user_editable: true
-    rules:
-      - string
-      - nullable
+- sort: 1
+  name: Host Name
+  description: |-
+    Название игрового сервера, отображаемое в списке
+    серверов CS2
+  env_variable: HOST_NAME
+  default_value: ServUp CS2
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - string
+- sort: 2
+  name: Server Tags
+  description: Тэги сервера
+  env_variable: SERVER_TAGS
+  default_value: knife,gloves,agents,music,cs2,de_mirage,de_dust2,secure,servup
+  user_viewable: true
+  user_editable: true
+  rules:
+  - string
+  - nullable
+- sort: 3
+  name: Map
+  description: |-
+    Стартовая карта для сервера. Примеры: de_dust2, de_mirage, de_nuke,
+    de_overpass, de_inferno, de_ancient, de_vertigo, de_anubis, cs_italy, cs_office Гонка
+    вооружений: ar_baggage, ar_shoots
+  env_variable: SRCDS_MAP
+  default_value: de_mirage
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - string
+  - alpha_dash
+- sort: 4
+  name: Game Server Login Token (GSLT)
+  description: |-
+    Токен учетной записи Steam, необходимый для публичного
+    отображения сервера. https://steamcommunity.com/dev/managegameservers
+  env_variable: STEAM_ACC
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - max:32
+  - nullable
+- sort: 5
+  name: Game Mode
+  description: "Это параметр, который определяет режим игры на\nсервере. Подробнее: \nhttps://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types"
+  env_variable: GAME_MODE
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - integer
+  - in:0,1,2,3,4
+- sort: 6
+  name: Game Type
+  description: "Это параметр, который определяет тип игры на сервере.\nПодробнее: \nhttps://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types"
+  env_variable: GAME_TYPE
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - integer
+  - in:0,1,2,3,4,5,6
+- sort: 7
+  name: Max Players
+  description: Максимальное количество слотов на сервере
+  env_variable: SRCDS_MAXPLAYERS
+  default_value: 32
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - integer
+- sort: 8
+  name: Valve Anti-Cheat
+  description: |-
+    Включить или отключить Valve Anti-Cheat на вашем сервере. По
+    умолчанию — Включено.
+  env_variable: VAC_ENABLED
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 9
+  name: Addons - Platform
+  description: |-
+    Какую платформу аддонов ставить на сервер. Варианты взаимоисключающие.
+
+    none    — чистый сервер, аддоны не ставятся
+    metamod — MetaMod:Source, при желании с CounterStrikeSharp поверх
+    swiftly — SwiftlyS2, самостоятельный фреймворк, MetaMod ему не нужен
+
+    При смене платформы файлы старых аддонов НЕ удаляются: убирается только
+    запись из gameinfo.gi, поэтому обратное переключение мгновенное и
+    плагины с конфигами остаются на месте.
+  env_variable: ADDON_PLATFORM
+  default_value: metamod
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - string
+  - in:none,metamod,swiftly
+- sort: 10
+  name: Addons - CounterStrikeSharp
+  description: |-
+    Ставить ли CounterStrikeSharp поверх MetaMod.
+
+    Работает ТОЛЬКО при Addons - Platform = metamod: CSS является плагином
+    MetaMod и без него не запускается. При platform = swiftly или none
+    опция игнорируется.
+
+    Link: https://github.com/roflmuffin/CounterStrikeSharp
+  env_variable: CSS_ENABLED
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 11
+  name: Auto Update - MetaMod
+  description: |-
+    Подтягивать новые версии MetaMod при каждом запуске сервера.
+
+    На УСТАНОВКУ не влияет: если выбрана платформа metamod, а MetaMod ещё не
+    установлен, он будет поставлен в любом случае. Выключите, чтобы
+    зафиксировать текущую версию.
+
+    Link: https://www.metamodsource.net/downloads.php/?branch=master
+  env_variable: METAMOD_AUTOUPDATE
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 12
+  name: Auto Update - CounterStrikeSharp
+  description: |-
+    Подтягивать новые версии CounterStrikeSharp при каждом запуске сервера.
+
+    На УСТАНОВКУ не влияет: если CSS включён, а его нет, он будет поставлен
+    в любом случае. Выключите, чтобы зафиксировать текущую версию.
+
+    Link: https://github.com/roflmuffin/CounterStrikeSharp
+  env_variable: CSS_AUTOUPDATE
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 13
+  name: Auto Update - Swiftly
+  description: |-
+    Подтягивать новые версии Swiftly (SwiftlyS2) при каждом запуске сервера.
+
+    На УСТАНОВКУ не влияет: если выбрана платформа swiftly, а Swiftly ещё не
+    установлен, он будет поставлен в любом случае. Выключите, чтобы
+    зафиксировать текущую версию.
+
+    Link: https://github.com/swiftly-solution/swiftlys2
+  env_variable: SWIFTLY_AUTOUPDATE
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 14
+  name: Filter - Enabled
+  description: |-
+    Включить или отключить фильтр консоли, чтобы скрыть
+    определенные сообщения. Настройте его с помощью файла
+    '/game/mute_messages.cfg', если включено.
+  env_variable: ENABLE_FILTER
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 15
+  name: Filter - Preview Mode
+  description: |-
+    Включить или отключить режим предварительного
+    просмотра для фильтра консоли. В режиме
+    предварительного просмотра заблокированные
+    сообщения отображаются красным цветом, что позволяет
+    вам проверить конфигурацию фильтра.
+  env_variable: FILTER_PREVIEW_MODE
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 16
+  name: Junk Cleaner - Enabled
+  description: |-
+    Автоматически очищает логи через 72 часа, файлы демо
+    через 7 дней и резервные копии раундов через 24 часа.
+  env_variable: CLEANUP_ENABLED
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 17
+  name: Custom Parameters
+  description: |-
+    Пользовательские параметры запуска, которые нужно
+    добавить в строку запуска сервере
+  env_variable: CUSTOM_PARAMS
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - string
+  - nullable
+- sort: 18
+  name: Bots Enable
+  description: |-
+    Включить / отключить ботов на вашем сервере. По
+    умолчанию эта опция включена.
+  env_variable: BOTS_ENABLED
+  default_value: 1
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 19
+  name: Workshop Collections
+  description: ID коллекции из Workshop
+  env_variable: WORKSHOP_COLLECTIONS_ID
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - string
+  - nullable
+- sort: 20
+  name: Workshop Map
+  description: Запуск карты по ID из Workshop
+  env_variable: WORKSHOP_MAP_ID
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - string
+  - nullable
+- sort: 21
+  name: Using Rcon
+  description: |-
+    Включить / отключить RCON для использования RCON-команд с
+    внешними инструментами. По умолчанию эта опция
+    отключена.
+  env_variable: RCON_ENABLED
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 22
+  name: Rcon Password
+  description: |-
+    Пароль для удалённого администрирования сервера.
+
+    Обязателен, если включён Using Rcon: при пустом пароле egg НЕ включит
+    RCON и напишет ошибку в консоль. Используйте длинный случайный пароль —
+    тот, кто знает его, полностью управляет сервером.
+  env_variable: RCON_PASSWORD
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - nullable
+  - string
+- sort: 23
+  name: MAP GROUP
+  description: Например, mb_bomb
+  env_variable: MAP_GROUP
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - string
+  - nullable
+- sort: 24
+  name: Name Config File
+  description: Конфигурация сервера по умолчанию, например, cs2server.cfg
+  env_variable: CFG_FILE
+  default_value: cs2server.cfg
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - string
+- sort: 25
+  name: Config file updater
+  description: Обновляем файл конфигурации если нужно
+  env_variable: UPDATE_CFG_FILE
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 26
+  name: Source AppID
+  description: НЕ ВИДИМО ДЛЯ ПОЛЬЗОВАТЕЛЕЙ. НЕ ИЗМЕНЯТЬ.
+  env_variable: SRCDS_APPID
+  default_value: 730
+  user_viewable: false
+  user_editable: false
+  rules:
+  - required
+  - numeric
+- sort: 27
+  name: Validate Install
+  description: |-
+    Включает или отключает проверку файлов игрового
+    сервера через SteamCMD. Установите значение 0, чтобы
+    отключить.
+  env_variable: SRCDS_VALIDATE
+  default_value: 0
+  user_viewable: false
+  user_editable: false
+  rules:
+  - required
+  - integer
+  - in:0,1
+- sort: 28
+  name: Egg - Log Level
+  description: |-
+    Уровень журнала для отображения Egg в консоли и файле
+    журнала.
+  env_variable: LOG_LEVEL
+  default_value: INFO
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - string
+  - in:INFO,WARNING,ERROR,DEBUG
+- sort: 29
+  name: Egg - File Logging
+  description: |-
+    Записывайте сообщения Egg в /egg.log, где они хранятся в
+    течение 48 часов.
+  env_variable: LOG_FILE_ENABLED
+  default_value: 0
+  user_viewable: false
+  user_editable: false
+  rules:
+  - boolean
+- sort: 30
+  name: Debug
+  description: |-
+    Включить режим отладки. ЕСЛИ ВЫ НЕ ЗНАЕТЕ, ДЛЯ ЧЕГО ЭТО
+    НУЖНО, НЕ ВКЛЮЧАЙТЕ!
+  env_variable: DEBUG
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 31
+  name: TV Enabled
+  description: ''
+  env_variable: TV_ENABLED
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 32
+  name: TV Name
+  description: ''
+  env_variable: TV_NAME
+  default_value: ServUp TV
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - string
+- sort: 33
+  name: TV Max Clients
+  description: ''
+  env_variable: TV_MAX_CLIENTS
+  default_value: 16
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - integer
+- sort: 34
+  name: TV Delay
+  description: ''
+  env_variable: TV_DELAY
+  default_value: 300
+  user_viewable: true
+  user_editable: true
+  rules:
+  - required
+  - integer

@@ -8,9 +8,11 @@ LABEL author="Armatura" \
 # Подготавливаем окружение
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN mkdir -p /etc/sudoers.d \
-    && echo "%sudo ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/flatdeb \
-    && chmod 0440 /etc/sudoers.d/flatdeb
+# ВАЖНО: не оставляем NOPASSWD-правило sudo.
+# Базовый образ содержит sudo; правило "%sudo ALL=(ALL:ALL) NOPASSWD: ALL"
+# из flatdeb-заготовки давало бы passwordless root любому процессу в группе
+# sudo. Скриптам egg'а sudo не нужен ни на одном шаге.
+RUN rm -f /etc/sudoers.d/flatdeb
 
 # Устанавливаем пакеты
 RUN apt-get update \
@@ -19,11 +21,16 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Пользователь container. Базовый образ его НЕ содержит, из-за чего образ
+# невозможно было запустить напрямую (`docker run` падал с "unable to find user
+# container"); под Wings это не всплывало, потому что он задаёт uid численно.
+RUN useradd -m -d /home/container -s /bin/bash container
+
 # Создаём директории и копируем файлы
 RUN mkdir -p /scripts /utils /mnt
 
-COPY ./scripts/* /scripts/
-COPY ./utils/* /utils/
+COPY ./scripts/ /scripts/
+COPY ./utils/ /utils/
 COPY ./entrypoint.sh /entrypoint.sh
 COPY ./servUpConfig.cfg /servUpConfig.cfg
 
@@ -32,7 +39,6 @@ RUN chmod +x /scripts/*.sh \
     && chmod +x /utils/*.sh \
     && chmod +x /entrypoint.sh
 
-# Переходим на пользователя container (SteamRT специальный пользователь)
 USER container
 ENV USER=container HOME=/home/container
 WORKDIR /home/container

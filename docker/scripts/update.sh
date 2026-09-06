@@ -12,37 +12,54 @@ CONTAINER_FILES="/home/container"
 GAME_DIRECTORY="./game/csgo"
 OUTPUT_DIR="./game/csgo/addons"
 TEMP_DIR="./temps"
-ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
 VERSION_FILE="./game/versions.txt"
 
+GAMEINFO_FILE="$CONTAINER_FILES/game/csgo/gameinfo.gi"
+GAMEINFO_MNT="$BASE_FILES/game/csgo/gameinfo.gi"
+
 # ===========================
-# Конфигурация типов аддонов
+# Реестр аддонов
 # ===========================
+# Маркер = файл, доказывающий РЕАЛЬНУЮ установку.
+# Проверять сам каталог нельзя: CounterStrikeSharp кладёт
+# addons/metamod/counterstrikesharp.vdf, из-за чего addons/metamod существует
+# даже когда самого MetaMod нет.
+addon_marker() {
+    case "$1" in
+        metamod) printf '%s' "$OUTPUT_DIR/metamod/bin/linuxsteamrt64/metamod.2.cs2.so" ;;
+        css)     printf '%s' "$OUTPUT_DIR/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so" ;;
+        swiftly) printf '%s' "$OUTPUT_DIR/swiftlys2/bin/linuxsteamrt64/swiftlys2.so" ;;
+    esac
+}
 
-# Объявляем ассоциативные массивы для конфигурации
-declare -A ADDON_FILE_PATTERNS=(
-    ["css"]="counterstrikesharp-with-runtime-linux-.*\.zip"
-    ["swiftly"]="swiftlys2-linux-v.*-with-runtimes\.zip"
-    ["modsharp"]="modsharp.*linux\.zip"
-)
+addon_name() {
+    case "$1" in
+        metamod) printf '%s' "Metamod" ;;
+        css)     printf '%s' "CSS" ;;
+        swiftly) printf '%s' "Swiftly" ;;
+    esac
+}
 
-declare -A ADDON_GAMEINFO_DIRS=(
-    ["css"]=""                    # CSS не добавляется в gameinfo.gi
-    ["swiftly"]="swiftlys2"       # Swiftly добавляется как csgo/addons/swiftlys2
-    ["modsharp"]="modsharp"       # ModSharp добавляется как csgo/addons/modsharp
-)
+# Включено ли автообновление для конкретного аддона
+addon_autoupdate() {
+    case "$1" in
+        metamod) printf '%s' "${METAMOD_AUTOUPDATE:-0}" ;;
+        css)     printf '%s' "${CSS_AUTOUPDATE:-0}" ;;
+        swiftly) printf '%s' "${SWIFTLY_AUTOUPDATE:-0}" ;;
+    esac
+}
 
-declare -A ADDON_REQUIRES_METAMOD=(
-    ["css"]="1"        # CSS требует MetaMod
-    ["swiftly"]="0"    # Swiftly standalone
-    ["modsharp"]="0"   # ModSharp standalone
-)
-
-declare -A ADDON_INSTALL_DIRS=(
-    ["css"]="counterstrikesharp"     # CSS устанавливается в addons/counterstrikesharp
-    ["swiftly"]="swiftlys2"          # Swiftly устанавливается в addons/swiftlys2
-    ["modsharp"]="modsharp"          # ModSharp устанавливается в addons/modsharp
-)
+# Выбранная платформа аддонов: none | metamod | swiftly
+addon_platform() {
+    local p="${ADDON_PLATFORM:-metamod}"
+    case "$p" in
+        none|metamod|swiftly) printf '%s' "$p" ;;
+        *)
+            log_message "Некорректный ADDON_PLATFORM='$p'. Допустимо: none, metamod, swiftly. Использую 'none'." "error"
+            printf '%s' "none"
+            ;;
+    esac
+}
 
 # ===========================
 # Проверка mount
@@ -92,9 +109,11 @@ copy_bin() {
         "$BASE_FILES/game/bin/" \
         "$CONTAINER_FILES/game/bin/"
 
-    rsync -av --ignore-existing \
-        "$BASE_FILES/steamapps/" \
-        "$CONTAINER_FILES/steamapps/"
+    if [ -d "$BASE_FILES/steamapps" ]; then
+        rsync -a --ignore-existing \
+            "$BASE_FILES/steamapps/" \
+            "$CONTAINER_FILES/steamapps/"
+    fi
 
     log_message "Копирование bin завершено." "success"
 }
@@ -106,9 +125,11 @@ copy_cfg() {
     log_message "Копируем /game/csgo/cfg из $BASE_FILES в $CONTAINER_FILES (только недостающие)..." "running"
     mkdir -p "$CONTAINER_FILES/game/csgo/cfg"
 
-    rsync -av --ignore-existing \
-        "$BASE_FILES/game/csgo/cfg/" \
-        "$CONTAINER_FILES/game/csgo/cfg/"
+    if [ -d "$BASE_FILES/game/csgo/cfg" ]; then
+        rsync -a --ignore-existing \
+            "$BASE_FILES/game/csgo/cfg/" \
+            "$CONTAINER_FILES/game/csgo/cfg/"
+    fi
 
     log_message "Копирование cfg завершено." "success"
 }
@@ -119,56 +140,34 @@ copy_cfg() {
 create_symlinks() {
     log_message "Создаём символьные ссылки из $BASE_FILES в $CONTAINER_FILES..." "running"
 
-    # Перебираем все файлы внутри $BASE_FILES
-    find "$BASE_FILES" -type f | while read -r file; do
-        # Пропускаем bin/ и cfg/, они копируются отдельно
-        if [[ $file == "$BASE_FILES/game/bin/"* ]]; then
-            continue
-        fi
-        if [[ $file == "$BASE_FILES/game/csgo/cfg/"* ]]; then
-            continue
-        fi
+    find "$BASE_FILES" -type f -print0 | while IFS= read -r -d '' file; do
+        case "$file" in
+            # Копируются отдельно
+            "$BASE_FILES/game/bin/"*|"$BASE_FILES/game/csgo/cfg/"*|"$BASE_FILES/steamapps/"*)
+                continue ;;
+            # КРИТИЧЕСКИ ВАЖНО: контейнер ПИШЕТ в эти пути. Симлинк увёл бы запись
+            # в /mnt, который смонтирован только на чтение.
+            "$BASE_FILES/game/csgo/gameinfo.gi"|"$BASE_FILES/game/versions.txt"|"$BASE_FILES/game/csgo/addons/"*)
+                continue ;;
+        esac
 
-        if [[ $file == "$BASE_FILES/steamapps/"* ]]; then
-            continue
-        fi
-        
-        # КРИТИЧЕСКИ ВАЖНО: НЕ создаём ссылку для gameinfo.gi
-        # Этот файл модифицируется (добавление MetaMod, Swiftly и т.д.)
-        # и должен быть локальным в контейнере
-        if [[ $file == "$BASE_FILES/game/csgo/gameinfo.gi" ]]; then
-            continue
-        fi
-
-        # Относительный путь
-        local relative_path="${file#$BASE_FILES/}"
+        local relative_path="${file#"$BASE_FILES"/}"
         local symlink_path="$CONTAINER_FILES/$relative_path"
+
+        [ -L "$symlink_path" ] && continue
 
         mkdir -p "$(dirname "$symlink_path")"
 
-        if [ ! -L "$symlink_path" ]; then
-            ln -s "$file" "$symlink_path" && {
-                log_message "Создана символическая ссылка: $symlink_path -> $file" "running"
-            } || {
-                # Если не удалось, пробуем удалить существующий файл и повторить
-                log_message "Не удалось создать ссылку: $symlink_path -> $file. Пытаемся удалить существующий файл или ссылку..." "warning"
-                if [ -e "$symlink_path" ]; then
-                    rm -f "$symlink_path" && {
-                        log_message "Удалён существующий файл или ссылка: $symlink_path" "running"
-                        # Повторная попытка
-                        ln -s "$file" "$symlink_path" && {
-                            log_message "Символьная ссылка создана повторно: $symlink_path -> $file" "success"
-                        } || {
-                            log_message "Повторное создание ссылки не удалось: $symlink_path -> $file" "error"
-                        }
-                    } || {
-                        log_message "Не удалось удалить существующий файл или ссылку: $symlink_path" "error"
-                    }
-                else
-                    # Если файла/ссылки там нет, возможно недостаточно прав или иная ошибка
-                    log_message "Файл/ссылка отсутствуют, но создать ссылку всё равно не удалось: $symlink_path -> $file" "error"
-                fi
-            }
+        if ln -s "$file" "$symlink_path" 2>/dev/null; then
+            log_message "Создана символическая ссылка: $symlink_path -> $file" "debug"
+            continue
+        fi
+
+        rm -f "$symlink_path" 2>/dev/null || true
+        if ln -s "$file" "$symlink_path" 2>/dev/null; then
+            log_message "Символьная ссылка создана повторно: $symlink_path -> $file" "debug"
+        else
+            log_message "Не удалось создать ссылку: $symlink_path -> $file" "error"
         fi
     done
 }
@@ -179,10 +178,10 @@ create_symlinks() {
 remove_stale_symlinks() {
     log_message "Ищем и удаляем битые ссылки в $CONTAINER_FILES..." "running"
 
-    find "$CONTAINER_FILES" -type l | while read -r symlink; do
+    find "$CONTAINER_FILES" -type l -print0 | while IFS= read -r -d '' symlink; do
         if [ ! -e "$symlink" ]; then
-            rm "$symlink" && \
-                log_message "Удалена битая ссылка: $symlink" "running"
+            rm -f "$symlink" && \
+                log_message "Удалена битая ссылка: $symlink" "debug"
         fi
     done
 }
@@ -192,18 +191,12 @@ remove_stale_symlinks() {
 # ===========================
 get_current_version() {
     local addon="$1"
-    if [ -f "$VERSION_FILE" ]; then
-        # Сохраняем результат grep в переменную line.
-        # Если не найдено, то line будет пустой.
-        local line
-        line="$(grep "^$addon=" "$VERSION_FILE" || true)"
+    [ -f "$VERSION_FILE" ] || { echo ""; return 0; }
 
-        if [ -n "$line" ]; then
-            # Отрезаем всё до знака '='
-            echo "${line#*=}"
-        else
-            echo ""
-        fi
+    local line
+    line="$(grep "^$addon=" "$VERSION_FILE" || true)"
+    if [ -n "$line" ]; then
+        echo "${line#*=}"
     else
         echo ""
     fi
@@ -213,6 +206,7 @@ update_version_file() {
     local addon="$1"
     local new_version="$2"
 
+    mkdir -p "$(dirname "$VERSION_FILE")"
     if [ -f "$VERSION_FILE" ] && grep -q "^$addon=" "$VERSION_FILE"; then
         sed -i "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE"
     else
@@ -230,25 +224,30 @@ handle_download_and_extract() {
     local file_type="$4" # "zip" | "tar.gz"
 
     log_message "Загрузка файла: $url" "debug"
+
     local max_retries=3
     local retry=0
+    local downloaded=0
 
-    while [ $retry -lt $max_retries ]; do
+    while [ "$retry" -lt "$max_retries" ]; do
         if curl -fsSL -m 300 -o "$output_file" "$url"; then
+            downloaded=1
             break
         fi
-        ((retry++))
-        log_message "Не удалось скачать файл (попытка $retry). Повтор через 5 сек..." "error"
+        # NB: НЕ ((retry++)) — при retry=0 постинкремент возвращает 0,
+        # статус 1, и под `set -e` цикл ретраев убивал бы весь запуск.
+        retry=$((retry + 1))
+        log_message "Не удалось скачать файл (попытка $retry из $max_retries). Повтор через 5 сек..." "warning"
         sleep 5
     done
 
-    if [ $retry -eq $max_retries ]; then
-        log_message "Скачивание не удалось после $max_retries попыток" "error"
+    if [ "$downloaded" -ne 1 ]; then
+        log_message "Скачивание не удалось после $max_retries попыток: $url" "error"
         return 1
     fi
 
     if [ ! -s "$output_file" ]; then
-        log_message "Скачанный файл пуст!" "error"
+        log_message "Скачанный файл пуст: $url" "error"
         return 1
     fi
 
@@ -256,13 +255,13 @@ handle_download_and_extract() {
     mkdir -p "$extract_dir"
 
     case "$file_type" in
-        "zip")
+        zip)
             unzip -qq -o "$output_file" -d "$extract_dir" || {
                 log_message "Ошибка распаковки zip-файла: $url" "error"
                 return 1
             }
             ;;
-        "tar.gz")
+        tar.gz)
             tar -xzf "$output_file" -C "$extract_dir" || {
                 log_message "Ошибка распаковки tar.gz: $url" "error"
                 return 1
@@ -273,265 +272,300 @@ handle_download_and_extract() {
 }
 
 # ===========================
-# Проверка, есть ли новая версия
+# GitHub API
 # ===========================
-check_version() {
-    local addon="$1"
-    local current="$2"
-    local new="$3"
+github_latest_release() {
+    local repo="$1"
+    local out_json="$2"
 
-    if [ "$current" != "$new" ]; then
-        log_message "Новая версия для $addon: $new (была $current)" "running"
+    local -a headers=(-H "Accept: application/vnd.github+json")
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        headers+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+    fi
+
+    local code
+    code="$(curl -sS -m 30 -o "$out_json" -w '%{http_code}' \
+        "${headers[@]}" \
+        "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "000")"
+
+    case "$code" in
+        200) return 0 ;;
+        403|429)
+            log_message "GitHub API отклонил запрос (HTTP $code) для $repo." "error"
+            log_message "Скорее всего исчерпан лимит 60 запросов/час на IP ноды — его делят все контейнеры." "warning"
+            log_message "Поднять лимит: задайте переменную окружения GITHUB_TOKEN." "warning"
+            return 1
+            ;;
+        000)
+            log_message "GitHub API недоступен (сеть или таймаут) для $repo." "error"
+            return 1
+            ;;
+        *)
+            log_message "GitHub API вернул HTTP $code для $repo." "error"
+            return 1
+            ;;
+    esac
+}
+
+# ===========================
+# Установка / обновление аддонов
+# ===========================
+
+# Устанавливает аддон, если его нет; обновляет, если стоит автообновление.
+# Возвращает 0, если после вызова аддон присутствует и пригоден к загрузке.
+ensure_addon() {
+    local type="$1"
+    local name marker installed=0
+    name="$(addon_name "$type")"
+    marker="$(addon_marker "$type")"
+
+    [ -e "$marker" ] && installed=1
+
+    if [ "$installed" -eq 1 ] && [ "$(addon_autoupdate "$type")" != "1" ]; then
+        log_message "$name установлен, автообновление выключено — оставляем текущую версию ($(get_current_version "$name"))." "info"
         return 0
     fi
-    log_message "У $addon актуальная версия: $current" "success"
+
+    local ok=0
+    if [ "$type" = "metamod" ]; then
+        install_metamod "$installed" && ok=1 || ok=0
+    else
+        install_github_addon "$type" "$installed" && ok=1 || ok=0
+    fi
+
+    if [ "$ok" -eq 1 ]; then
+        return 0
+    fi
+
+    # Сеть/зеркало недоступны. Если аддон уже стоял — продолжаем на старой версии.
+    if [ "$installed" -eq 1 ]; then
+        log_message "$name обновить не удалось, продолжаем на установленной версии ($(get_current_version "$name"))." "warning"
+        return 0
+    fi
+
+    log_message "$name не установлен, и установка не удалась. Сервер стартует без него." "error"
     return 1
 }
 
-# ===========================
-# Обновление Metamod / CSS и пр.
-# ===========================
-cleanup_and_update() {
-    # Если включена очистка, запускаем
-    if [ "${CLEANUP_ENABLED:-0}" = "1" ]; then
-        cleanup
-    fi
+install_github_addon() {
+    local type="$1"
+    local installed="$2"
 
-    mkdir -p "$TEMP_DIR"
+    local repo pattern name
+    name="$(addon_name "$type")"
+    case "$type" in
+        css)
+            repo="roflmuffin/CounterStrikeSharp"
+            pattern="counterstrikesharp-with-runtime-linux-.*\\.zip"
+            ;;
+        swiftly)
+            repo="swiftly-solution/swiftlys2"
+            pattern="swiftlys2-linux-v.*-with-runtimes\\.zip"
+            ;;
+        *)
+            log_message "Неизвестный тип аддона: $type" "error"
+            return 1
+            ;;
+    esac
 
-    # Обновление Metamod (только если включено)
-    if [ "${METAMOD_AUTOUPDATE:-0}" = "1" ]; then
-        update_metamod
-    fi
+    local temp_dir="$TEMP_DIR/$type"
+    local json="$TEMP_DIR/$type-release.json"
+    rm -rf "$temp_dir"
+    mkdir -p "$temp_dir" "$OUTPUT_DIR"
 
-    # Обновление CounterStrikeSharp (CSS)
-    if [ "${CSS_AUTOUPDATE:-0}" = "1" ]; then
-        update_addon_universal "roflmuffin/CounterStrikeSharp" "css" "CSS"
-    fi
+    log_message "Проверка обновлений для $name..." "running"
+    github_latest_release "$repo" "$json" || return 1
 
-    # Обновление Swiftly (SwiftlyS2)
-    if [ "${SWIFTLY_AUTOUPDATE:-0}" = "1" ]; then
-        update_addon_universal "swiftly-solution/swiftlys2" "swiftly" "Swiftly"
-    fi
-
-    # Обновляем server.cfg (если нужно)
-    if [ "${UPDATE_CFG_FILE:-0}" = "1" ]; then
-        update_server_cfg
-    fi
-    
-    # Проверяем порядок в gameinfo.gi
-    verify_gameinfo_order
-
-    rm -rf "$TEMP_DIR"
-}
-
-update_addon_universal() {
-    local repo="$1"
-    local addon_type="$2"      # css, swiftly, modsharp
-    local addon_name="$3"      # CSS, Swiftly, ModSharp
-    
-    # Проверка валидности типа
-    if [ -z "${ADDON_FILE_PATTERNS[$addon_type]}" ]; then
-        log_message "Неизвестный тип аддона: $addon_type" "error"
-        return 1
-    fi
-    
-    local temp_dir="$TEMP_DIR/$addon_type"
-    mkdir -p "$OUTPUT_DIR" "$temp_dir"
-    rm -rf "$temp_dir"/*
-    
-    # 1. Получить информацию о релизе
-    log_message "Проверка обновлений для $addon_name..." "running"
-    
-    local api_response
-    api_response="$(curl -s "https://api.github.com/repos/$repo/releases/latest")" || true
-    
-    if [ -z "$api_response" ]; then
-        log_message "Не удалось получить информацию о релизе для $repo" "error"
-        return 1
-    fi
-    
-    # 2. Извлечь версию
     local new_version
-    new_version="$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+' || true)"
-    
+    new_version="$(jq -r '.tag_name // empty' "$json" 2>/dev/null || true)"
     if [ -z "$new_version" ]; then
-        log_message "Не удалось определить версию для $addon_name" "error"
+        log_message "Не удалось определить версию для $name (некорректный ответ GitHub)." "error"
         return 1
     fi
-    
-    # 3. Проверить физическое наличие аддона и необходимость обновления
-    local current_version
-    current_version="$(get_current_version "$addon_name")"
-    
-    # Проверяем существование папки аддона
-    local addon_install_dir="${ADDON_INSTALL_DIRS[$addon_type]}"
-    local addon_full_path="$OUTPUT_DIR/$addon_install_dir"
-    
-    if [ ! -d "$addon_full_path" ]; then
-        if [ -n "$current_version" ]; then
-            log_message "$addon_name удалён вручную (версия: $current_version, но папка отсутствует). Переустанавливаю..." "warning"
-        else
-            log_message "$addon_name не установлен. Устанавливаю версию $new_version..." "running"
-        fi
-        # Принудительная установка - НЕ проверяем версию
-    else
-        # Папка существует - проверяем версию
-        if ! check_version "$addon_name" "$current_version" "$new_version"; then
+
+    if [ "$installed" -eq 1 ]; then
+        local current_version
+        current_version="$(get_current_version "$name")"
+        if [ "$current_version" = "$new_version" ]; then
+            log_message "У $name актуальная версия: $current_version" "success"
             return 0
         fi
+        log_message "Новая версия для $name: $new_version (была ${current_version:-неизвестна})" "running"
+    else
+        log_message "$name не установлен. Устанавливаю версию $new_version..." "running"
     fi
-    
-    # 4. Найти подходящий asset
-    local file_pattern="${ADDON_FILE_PATTERNS[$addon_type]}"
+
+    # first вместо `| head -n1`: под `set -o pipefail` SIGPIPE в head уронил бы конвейер
     local asset_url
-    
-    # Получаем список всех browser_download_url
-    local all_urls
-    all_urls="$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+')"
-    
-    # Ищем URL по паттерну
-    asset_url="$(echo "$all_urls" | grep -E "$file_pattern" | head -n1 || true)"
-    
+    asset_url="$(jq -r --arg re "$pattern" \
+        '[.assets[]?.browser_download_url | select(test($re))] | first // empty' "$json")"
+
     if [ -z "$asset_url" ]; then
-        log_message "Не найден файл для $addon_name (паттерн: $file_pattern)" "error"
-        log_message "Доступные файлы:" "debug"
-        echo "$all_urls" | while read -r url; do
-            log_message "  - $(basename "$url")" "debug"
+        log_message "В релизе $name не найден файл по паттерну: $pattern" "error"
+        jq -r '.assets[]?.name' "$json" 2>/dev/null | while read -r a; do
+            log_message "  доступно: $a" "debug"
         done
         return 1
     fi
-    
+
     log_message "Найден файл: $(basename "$asset_url")" "debug"
-    
-    # 5. Скачать и распаковать
-    if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
-        # 6. Установить аддон
-        # Ищем папку addons в архиве (может быть вложена)
-        local addons_src
-        addons_src="$(find "$temp_dir" -maxdepth 2 -type d -name 'addons' | head -n1)"
-        
-        if [ -n "$addons_src" ] && [ -d "$addons_src" ]; then
-            # Для Swiftly: удаляем папку metamod из архива (она там может быть, но мы управляем MetaMod отдельно)
-            if [ "$addon_type" = "swiftly" ] && [ -d "$addons_src/metamod" ]; then
-                log_message "Удаляем metamod из архива Swiftly (управляется отдельно)" "debug"
-                rm -rf "$addons_src/metamod"
-            fi
-            
-            cp -r "$addons_src/." "$OUTPUT_DIR"
-            log_message "Файлы $addon_name скопированы из $addons_src в $OUTPUT_DIR" "debug"
-        else
-            log_message "Структура архива не содержит папку addons/ (проверено до глубины 2)" "error"
-            log_message "Содержимое $temp_dir:" "debug"
-            find "$temp_dir" -maxdepth 2 -type d | while read -r dir; do
-                log_message "  - $dir" "debug"
-            done
-            return 1
-        fi
-        
-        # 7. Обновить версию
-        update_version_file "$addon_name" "$new_version"
-        
-        # 8. Обновить gameinfo.gi (если нужно)
-        local gameinfo_dir="${ADDON_GAMEINFO_DIRS[$addon_type]}"
-        if [ -n "$gameinfo_dir" ]; then
-            add_gameinfo_entry "$gameinfo_dir" "$addon_name"
-        fi
-        
-        log_message "$addon_name обновлён до версии $new_version" "success"
-        return 0
-    else
-        log_message "Ошибка при установке $addon_name" "error"
+    handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip" || return 1
+
+    local addons_src
+    addons_src="$(find "$temp_dir" -maxdepth 2 -type d -name 'addons' | head -n1 || true)"
+    if [ -z "$addons_src" ] || [ ! -d "$addons_src" ]; then
+        log_message "Структура архива $name не содержит папку addons/ (проверено до глубины 2)" "error"
         return 1
     fi
+
+    # Swiftly в некоторых релизах кладёт свой metamod — им управляем отдельно
+    if [ "$type" = "swiftly" ] && [ -d "$addons_src/metamod" ]; then
+        log_message "Удаляем metamod из архива Swiftly (управляется отдельно)" "debug"
+        rm -rf "$addons_src/metamod"
+    fi
+
+    cp -rf "$addons_src/." "$OUTPUT_DIR/" || {
+        log_message "Не удалось скопировать файлы $name в $OUTPUT_DIR" "error"
+        return 1
+    }
+
+    update_version_file "$name" "$new_version"
+    log_message "$name установлен/обновлён до версии $new_version" "success"
+    return 0
 }
 
-update_metamod() {
-    local branch="${1:-master}"  # stable/dev/master
-    local page file_name url_primary tmp_tar current_version new_version
-    tmp_tar="$TEMP_DIR/metamod.tar.gz"
-    
-    local metamod_installed=false
-    if [ ! -d "$OUTPUT_DIR/metamod" ]; then
-        log_message "Metamod не установлен" "running"
-    else
-        metamod_installed=true
-    fi
+install_metamod() {
+    local installed="$1"
+    local branch="${METAMOD_BRANCH:-master}"   # stable | dev | master
 
-    # 1) Страница загрузок
     local downloads_page="https://www.metamodsource.net/downloads.php?branch=${branch}"
-    page="$(curl -fsSL "$downloads_page" || true)"
+    local page
+    page="$(curl -fsSL -m 30 "$downloads_page" 2>/dev/null || true)"
     if [ -z "$page" ]; then
-        log_message "Страница загрузок недоступна: ${downloads_page}" "error"
-        return 0
+        log_message "Страница загрузок Metamod недоступна: $downloads_page" "error"
+        return 1
     fi
 
-    # 2) Парсим все linux-архивы и берём с максимальным gitNNNN
+    # Берём linux-архив с максимальным номером билда gitNNNN
+    local file_name
     file_name="$(
         printf '%s' "$page" \
         | grep -oE 'mmsource-[^"]*-linux\.tar\.gz' \
         | tr -d '\r' \
         | awk '{fn=$0; if (match($0,/git[0-9]+/)) {g=substr($0,RSTART+3,RLENGTH-3); print g" "fn}}' \
-        | sort -nr | head -n1 | awk '{ $1=""; sub(/^ /,""); print }'
+        | sort -nr | head -n1 | awk '{ $1=""; sub(/^ /,""); print }' \
+        || true
     )"
 
     if [ -z "$file_name" ]; then
-        log_message "Не удалось найти ссылку на linux-архив на странице ${downloads_page}" "error"
-        return 0
+        log_message "Не удалось найти ссылку на linux-архив на странице $downloads_page" "error"
+        return 1
     fi
 
-    # 3) Версия и URL только с зеркала
-    new_version="$(echo "$file_name" | grep -oE 'git[0-9]+' | tr -d '\r' || true)"
+    local new_version
+    new_version="$(printf '%s' "$file_name" | grep -oE 'git[0-9]+' | tr -d '\r' || true)"
     if [ -z "$new_version" ]; then
         log_message "Не удалось распознать номер билда из имени: $file_name" "error"
-        return 0
+        return 1
     fi
 
-    url_primary="https://www.sourcemm.net/mmsdrop/2.0/${file_name}"
-    url_primary="$(printf '%s' "$url_primary" | tr -d '\r' | xargs)"
-    file_name="$(printf '%s' "$file_name" | xargs)"
-
-    current_version="$(get_current_version "Metamod")"
-    
-    # Проверяем: если папка удалена вручную, но версия записана - переустанавливаем
-    if [ "$metamod_installed" = false ]; then
-        if [ -n "$current_version" ]; then
-            log_message "Metamod удалён вручную (версия: $current_version, но папка отсутствует). Переустанавливаю..." "warning"
-        else
-            log_message "Устанавливаю Metamod версии $new_version..." "running"
-        fi
-        # Принудительная установка - НЕ проверяем версию
-    else
-        # Папка существует - проверяем версию
-        if ! check_version "Metamod" "$current_version" "$new_version"; then
+    if [ "$installed" -eq 1 ]; then
+        local current_version
+        current_version="$(get_current_version "Metamod")"
+        if [ "$current_version" = "$new_version" ]; then
+            log_message "У Metamod актуальная версия: $current_version" "success"
             return 0
         fi
+        log_message "Новая версия для Metamod: $new_version (была ${current_version:-неизвестна})" "running"
+    else
+        log_message "Metamod не установлен. Устанавливаю версию $new_version..." "running"
     fi
 
-    log_message "Новая версия для Metamod: ${new_version} (файл: ${file_name})" "running"
-    log_message "url_primary=[$url_primary]" "running"
-
-    # 4) Скачиваем и распаковываем через твой helper (ВАЖНО: порядок аргументов)
-    mkdir -p "$TEMP_DIR"
+    local url="https://www.sourcemm.net/mmsdrop/2.0/${file_name}"
+    local tmp_tar="$TEMP_DIR/metamod.tar.gz"
     rm -f "$tmp_tar"
     rm -rf "$TEMP_DIR/metamod"
+    mkdir -p "$TEMP_DIR" "$OUTPUT_DIR"
 
-    if handle_download_and_extract "$url_primary" "$tmp_tar" "$TEMP_DIR/metamod" "tar.gz"; then
-        # 5) Копируем addons/ (иногда архив кладёт в корень, иногда — в подпапку)
-        local addons_src
-        addons_src="$(find "$TEMP_DIR/metamod" -maxdepth 2 -type d -path '*/addons' | head -n1)"
-        if [ -z "$addons_src" ]; then
-            log_message "Не нашли папку addons/ после распаковки" "error"
-            return 1
-        fi
-        cp -rf "$addons_src/." "$OUTPUT_DIR/"
-        update_version_file "Metamod" "$new_version"
-        log_message "Metamod обновлён до $new_version" "success"
+    handle_download_and_extract "$url" "$tmp_tar" "$TEMP_DIR/metamod" "tar.gz" || return 1
+
+    local addons_src
+    addons_src="$(find "$TEMP_DIR/metamod" -maxdepth 2 -type d -name 'addons' | head -n1 || true)"
+    if [ -z "$addons_src" ]; then
+        log_message "Не нашли папку addons/ после распаковки Metamod" "error"
+        return 1
+    fi
+
+    cp -rf "$addons_src/." "$OUTPUT_DIR/" || {
+        log_message "Не удалось скопировать файлы Metamod в $OUTPUT_DIR" "error"
+        return 1
+    }
+
+    update_version_file "Metamod" "$new_version"
+    log_message "Metamod установлен/обновлён до $new_version" "success"
+    return 0
+}
+
+# ===========================
+# gameinfo.gi
+# ===========================
+
+# Идемпотентно приводит gameinfo.gi к переданному набору аддонов:
+# сносит ВСЕ строки `Game csgo/addons/*` и вставляет нужные после Game_LowViolence
+# в порядке аргументов. Остальные строки файла не трогаются, поэтому ручные правки
+# пользователя сохраняются. Повторный вызов с теми же аргументами ничего не меняет.
+sync_gameinfo() {
+    local -a wanted=("$@")
+
+    if [ ! -f "$GAMEINFO_FILE" ]; then
+        log_message "Файл gameinfo.gi не найден: $GAMEINFO_FILE" "error"
+        return 1
+    fi
+
+    local block="" entry
+    for entry in ${wanted[@]+"${wanted[@]}"}; do
+        block+=$'\t\t\tGame\tcsgo/addons/'"$entry"$'\n'
+    done
+
+    local tmp="${GAMEINFO_FILE}.tmp"
+    if ! awk -v block="$block" '
+            /[Gg]ame[[:blank:]]+csgo\/addons\// { next }
+            { print }
+            /Game_LowViolence/ && !inserted { printf "%s", block; inserted = 1 }
+            END { if (!inserted) exit 3 }
+        ' "$GAMEINFO_FILE" > "$tmp"
+    then
+        rm -f "$tmp"
+        log_message "В gameinfo.gi нет якоря Game_LowViolence — аддоны не будут подключены." "error"
+        log_message "Удалите game/csgo/gameinfo.gi и перезапустите сервер, чтобы взять файл с хоста." "error"
+        return 1
+    fi
+
+    mv "$tmp" "$GAMEINFO_FILE"
+
+    if [ "${#wanted[@]}" -eq 0 ]; then
+        log_message "gameinfo.gi: аддоны не подключены." "info"
     else
-        log_message "Не удалось скачать/распаковать Metamod" "error"
+        log_message "gameinfo.gi: активны — ${wanted[*]}" "success"
+    fi
+    return 0
+}
+
+# Предупреждаем, если Valve обновила gameinfo.gi на хосте, а в контейнере
+# лежит старая копия (или пользователь правил файл руками).
+gameinfo_drift_check() {
+    [ -f "$GAMEINFO_MNT" ] && [ -f "$GAMEINFO_FILE" ] || return 0
+
+    if ! diff -q <(grep -v 'csgo/addons/' "$GAMEINFO_FILE") \
+                 <(grep -v 'csgo/addons/' "$GAMEINFO_MNT") >/dev/null 2>&1; then
+        log_message "gameinfo.gi в контейнере отличается от версии на хосте (/mnt)." "warning"
+        log_message "Если это не ваши правки — удалите game/csgo/gameinfo.gi и перезапустите сервер." "warning"
     fi
 }
 
+# ===========================
+# server.cfg
+# ===========================
 update_server_cfg() {
     log_message "Обновление server.cfg..." "running"
 
@@ -540,28 +574,29 @@ update_server_cfg() {
 
     if [ ! -f "$ROOT_CFG" ]; then
         log_message "servUpConfig.cfg не найден, пропускаем обновление." "error"
-        return
+        return 0
     fi
 
-    if [ -f "$SERVER_CFG" ]; then
-        # Дописываем новые строки
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            local trimmed_line
-            trimmed_line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-            [[ -z "$trimmed_line" ]] && continue
-            [[ "$trimmed_line" =~ ^// ]] && continue
-
-            local first_word
-            first_word="$(echo "$trimmed_line" | awk '{print $1}')"
-            if ! grep -q "^$first_word\b" "$SERVER_CFG"; then
-                echo "$trimmed_line" >> "$SERVER_CFG"
-                log_message "Добавлена строка в server.cfg: $trimmed_line" "debug"
-            fi
-        done < "$ROOT_CFG"
-    else
+    if [ ! -f "$SERVER_CFG" ]; then
         cp "$ROOT_CFG" "$SERVER_CFG"
         log_message "Создан $SERVER_CFG на основе servUpConfig.cfg" "success"
+        return 0
     fi
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        local trimmed_line
+        trimmed_line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [[ -z "$trimmed_line" ]] && continue
+        [[ "$trimmed_line" =~ ^// ]] && continue
+
+        local first_word
+        first_word="$(echo "$trimmed_line" | awk '{print $1}')"
+        # -F: имя квара берём буквально, чтобы спецсимволы не стали regex
+        if ! grep -qF -- "$first_word" "$SERVER_CFG"; then
+            echo "$trimmed_line" >> "$SERVER_CFG"
+            log_message "Добавлена строка в server.cfg: $trimmed_line" "debug"
+        fi
+    done < "$ROOT_CFG"
 }
 
 initialize_server_cfg() {
@@ -573,187 +608,60 @@ initialize_server_cfg() {
         cp "$ROOT_CFG" "$SERVER_CFG"
         log_message "Создан $SERVER_CFG на основе servUpConfig.cfg." "success"
 
-        if [ -f "$SERVER_CFG" ]; then
-            sed -i "s/^hostname .*/hostname \"${HOST_NAME:-ServUp-CS2}\"/" "$SERVER_CFG"
-            sed -i "s/^sv_tags .*/sv_tags \"${SERVER_TAGS:-servup}\"/" "$SERVER_CFG"
-        fi
+        sed -i "s/^hostname .*/hostname \"${HOST_NAME:-ServUp-CS2}\"/" "$SERVER_CFG"
+        sed -i "s/^sv_tags .*/sv_tags \"${SERVER_TAGS:-servup}\"/" "$SERVER_CFG"
     fi
 }
-
-configure_metamod() {
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_ENTRY="			Game	csgo/addons/metamod"
-
-    if [ -f "$GAMEINFO_FILE" ]; then
-        if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then
-            awk -v new_entry="$GAMEINFO_ENTRY" '
-                BEGIN { found=0; }
-                {
-                    if (found == 1) {
-                        print new_entry
-                        found=0
-                    }
-                    print $0
-                }
-                /Game_LowViolence/ { found=1 }
-            ' "$GAMEINFO_FILE" > "${GAMEINFO_FILE}.tmp"
-
-            mv "${GAMEINFO_FILE}.tmp" "$GAMEINFO_FILE"
-        fi
-    fi
-}
-
 
 # ===========================
-# Управление gameinfo.gi
+# Главная процедура
 # ===========================
+cleanup_and_update() {
+    if [ "${CLEANUP_ENABLED:-0}" = "1" ]; then
+        cleanup || log_message "Очистка завершилась с ошибкой, продолжаем." "warning"
+    fi
 
-add_gameinfo_entry() {
-    local addon_dir="$1"      # Например: "swiftlys2", "modsharp"
-    local addon_name="$2"     # Например: "Swiftly", "ModSharp"
-    
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_BACKUP="${GAMEINFO_FILE}.backup"
-    local GAMEINFO_ENTRY="			Game	csgo/addons/$addon_dir"
-    
-    if [ ! -f "$GAMEINFO_FILE" ]; then
-        log_message "Файл gameinfo.gi не найден: $GAMEINFO_FILE" "error"
-        return 1
-    fi
-    
-    # Создаём резервную копию перед изменением (если её ещё нет)
-    if [ ! -f "$GAMEINFO_BACKUP" ]; then
-        cp "$GAMEINFO_FILE" "$GAMEINFO_BACKUP"
-        log_message "Создана резервная копия gameinfo.gi" "debug"
-    fi
-    
-    # Проверяем, есть ли уже запись
-    if grep -q "Game[[:blank:]]*csgo\/addons\/$addon_dir" "$GAMEINFO_FILE"; then
-        log_message "Запись $addon_name уже присутствует в gameinfo.gi" "debug"
-        return 0
-    fi
-    
-    # Добавляем запись после Game_LowViolence
-    log_message "Добавляем $addon_name в gameinfo.gi..." "running"
-    
-    awk -v new_entry="$GAMEINFO_ENTRY" '
-        BEGIN { found=0; }
-        {
-            if (found == 1) {
-                print new_entry
-                found=0
-            }
-            print $0
-        }
-        /Game_LowViolence/ { found=1 }
-    ' "$GAMEINFO_FILE" > "${GAMEINFO_FILE}.tmp"
-    
-    if [ $? -eq 0 ]; then
-        mv "${GAMEINFO_FILE}.tmp" "$GAMEINFO_FILE"
-        log_message "$addon_name добавлен в gameinfo.gi" "success"
-        return 0
-    else
-        log_message "Ошибка при обновлении gameinfo.gi для $addon_name" "error"
-        rm -f "${GAMEINFO_FILE}.tmp"
-        return 1
-    fi
-}
+    mkdir -p "$TEMP_DIR" "$OUTPUT_DIR"
 
-remove_gameinfo_entry() {
-    local addon_dir="$1"      # Например: "swiftlys2", "modsharp"
-    local addon_name="$2"     # Например: "Swiftly", "ModSharp"
-    
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_BACKUP="${GAMEINFO_FILE}.backup"
-    
-    if [ ! -f "$GAMEINFO_FILE" ]; then
-        return 0
-    fi
-    
-    # Создаём резервную копию перед изменением (если её ещё нет)
-    if [ ! -f "$GAMEINFO_BACKUP" ]; then
-        cp "$GAMEINFO_FILE" "$GAMEINFO_BACKUP"
-        log_message "Создана резервная копия gameinfo.gi" "debug"
-    fi
-    
-    # Проверяем, есть ли запись
-    if ! grep -q "csgo\/addons\/$addon_dir" "$GAMEINFO_FILE"; then
-        return 0
-    fi
-    
-    log_message "Удаляем $addon_name из gameinfo.gi..." "running"
-    
-    # Удаляем строку с записью
-    sed -i "/csgo\/addons\/$addon_dir/d" "$GAMEINFO_FILE"
-    
-    log_message "$addon_name удалён из gameinfo.gi" "success"
-    return 0
-}
+    local platform
+    platform="$(addon_platform)"
+    log_message "Платформа аддонов: $platform" "info"
 
-verify_gameinfo_order() {
-    # Проверяет и АВТОМАТИЧЕСКИ ИСПРАВЛЯЕТ порядок записей в gameinfo.gi
-    # MetaMod должен быть первым, потом остальные
-    
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_BACKUP="${GAMEINFO_FILE}.backup"
-    
-    if [ ! -f "$GAMEINFO_FILE" ]; then
-        return 0
-    fi
-    
-    # Получаем порядок записей
-    local entries
-    entries="$(grep -oP 'Game[[:blank:]]+csgo/addons/\K[^[:space:]]+' "$GAMEINFO_FILE" || true)"
-    
-    if [ -z "$entries" ]; then
-        return 0
-    fi
-    
-    log_message "Записи в gameinfo.gi:" "debug"
-    echo "$entries" | while read -r entry; do
-        log_message "  - $entry" "debug"
-    done
-    
-    # Проверяем что MetaMod первый (если он есть)
-    local first_entry
-    first_entry="$(echo "$entries" | head -n1)"
-    
-    if echo "$entries" | grep -q "metamod"; then
-        if [ "$first_entry" != "metamod" ]; then
-            log_message "ВНИМАНИЕ: MetaMod не первый в gameinfo.gi. Автоматически исправляю порядок..." "warning"
-            
-            # Создаём резервную копию перед изменением
-            if [ ! -f "$GAMEINFO_BACKUP" ]; then
-                cp "$GAMEINFO_FILE" "$GAMEINFO_BACKUP"
+    # Записи для gameinfo.gi. MetaMod обязан идти первым.
+    local -a entries=()
+
+    case "$platform" in
+        metamod)
+            if ensure_addon metamod; then
+                entries+=("metamod")
+                if [ "${CSS_ENABLED:-0}" = "1" ]; then
+                    # CSS — плагин MetaMod: своей записи в gameinfo.gi не имеет,
+                    # грузится через addons/metamod/counterstrikesharp.vdf
+                    ensure_addon css || true
+                else
+                    log_message "CounterStrikeSharp отключён (CSS_ENABLED=0)." "info"
+                fi
+            else
+                log_message "MetaMod недоступен — CounterStrikeSharp пропущен, он без MetaMod не работает." "error"
             fi
-            
-            # Простой способ: удаляем строку с metamod и добавляем её первой
-            local temp_file="${GAMEINFO_FILE}.reorder"
-            
-            # Удаляем запись metamod
-            sed '/Game[[:blank:]]*csgo\/addons\/metamod/d' "$GAMEINFO_FILE" > "$temp_file"
-            
-            # Добавляем metamod первым (сразу после Game_LowViolence)
-            awk '
-                BEGIN { added=0; }
-                /Game_LowViolence/ {
-                    print $0
-                    if (!added) {
-                        print "\t\t\tGame\tcsgo/addons/metamod"
-                        added=1
-                    }
-                    next
-                }
-                { print $0 }
-            ' "$temp_file" > "${GAMEINFO_FILE}"
-            
-            rm -f "$temp_file"
-            
-            log_message "Порядок в gameinfo.gi исправлен: MetaMod теперь первый" "success"
-        else
-            log_message "Порядок в gameinfo.gi правильный: MetaMod первый" "debug"
-        fi
+            ;;
+        swiftly)
+            if ensure_addon swiftly; then
+                entries+=("swiftlys2")
+            fi
+            ;;
+        none)
+            log_message "ADDON_PLATFORM=none — аддоны не устанавливаются, записи из gameinfo.gi убраны." "info"
+            ;;
+    esac
+
+    # Файлы отключённых аддонов НЕ удаляем: плагины и конфиги пользователя остаются,
+    # обратное переключение платформы мгновенное.
+    sync_gameinfo ${entries[@]+"${entries[@]}"} || true
+
+    if [ "${UPDATE_CFG_FILE:-0}" = "1" ]; then
+        update_server_cfg
     fi
-    
-    return 0
+
+    rm -rf "$TEMP_DIR"
 }
