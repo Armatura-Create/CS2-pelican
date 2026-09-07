@@ -34,12 +34,17 @@
 ## Быстрый старт
 
 ```bash
-cd /path/to/CS2-Basefiles-Egg/service
-chmod +x install.sh start.sh test-pelican.sh
-./install.sh
-./test-pelican.sh          # проверить ключи до запуска
+sudo git clone https://github.com/Armatura-Create/CS2-pelican.git /opt/cs2-updater
+cd /opt/cs2-updater/service
+sudo ./install.sh
+sudo ./test-pelican.sh     # проверить ключи до запуска
 sudo systemctl start cs2-updater.service
 ```
+
+⚠️ Первый запуск качает ~40 ГБ файлов игры — это долго.
+
+**Полная пошаговая инструкция (установка, обновление, откат, удаление):
+[INSTALL.md](INSTALL.md).** Этот файл — справочник по переменным и настройке mount.
 
 ---
 
