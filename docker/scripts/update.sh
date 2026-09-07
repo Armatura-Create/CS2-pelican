@@ -40,12 +40,15 @@ addon_name() {
     esac
 }
 
-# Включено ли автообновление для конкретного аддона
+# Включено ли автообновление для конкретного аддона.
+# ВАЖНО: значения по умолчанию обязаны совпадать с default_value в egg.
+# Сервер на старом egg не передаёт новых переменных вовсе, и расхождение
+# означало бы, что аддон молча выключится при первом же рестарте.
 addon_autoupdate() {
     case "$1" in
-        metamod) printf '%s' "${METAMOD_AUTOUPDATE:-0}" ;;
-        css)     printf '%s' "${CSS_AUTOUPDATE:-0}" ;;
-        swiftly) printf '%s' "${SWIFTLY_AUTOUPDATE:-0}" ;;
+        metamod) printf '%s' "${METAMOD_AUTOUPDATE:-1}" ;;
+        css)     printf '%s' "${CSS_AUTOUPDATE:-1}" ;;
+        swiftly) printf '%s' "${SWIFTLY_AUTOUPDATE:-1}" ;;
     esac
 }
 
@@ -634,7 +637,8 @@ cleanup_and_update() {
         metamod)
             if ensure_addon metamod; then
                 entries+=("metamod")
-                if [ "${CSS_ENABLED:-0}" = "1" ]; then
+                # дефолт 1 — как в egg: иначе старый egg + новый образ = CSS молча пропал
+                if [ "${CSS_ENABLED:-1}" = "1" ]; then
                     # CSS — плагин MetaMod: своей записи в gameinfo.gi не имеет,
                     # грузится через addons/metamod/counterstrikesharp.vdf
                     ensure_addon css || true

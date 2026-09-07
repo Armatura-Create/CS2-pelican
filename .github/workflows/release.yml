@@ -46,8 +46,9 @@ jobs:
           VERSION="${{ steps.ver.outputs.version }}"
           mkdir -p dist/cs2-updater
           cp -r service/. dist/cs2-updater/
-          # в архив не должно попасть ничего от конкретной установки
+          # в архив не должно попасть ничего от конкретной установки и мусора ОС
           rm -rf dist/cs2-updater/.env dist/cs2-updater/logs
+          find dist/cs2-updater \( -name '.DS_Store' -o -name 'Thumbs.db' -o -name '*.swp' \) -delete
           echo "$VERSION" > dist/cs2-updater/VERSION
           chmod +x dist/cs2-updater/*.sh
           tar -czf cs2-updater.tar.gz -C dist cs2-updater
@@ -64,6 +65,8 @@ jobs:
           test -f check/utils/logging.sh
           test -f check/VERSION
           test ! -e check/.env
+          test ! -e check/.DS_Store
+          test ! -e check/docker && test ! -e check/egg
           grep -q '^v[0-9]' check/VERSION
           echo "Архив в порядке"
 
