@@ -4,9 +4,10 @@
 
 ## Состав
 
-- **`service/`** — updater на Linux-хосте: SteamCMD, автообновление, управление серверами через Pelican API.  
+- **`service/`** — updater на Linux-хосте: SteamCMD, автообновление, управление серверами через Pelican API. Публикуется релизами.  
   → Установка и обновление: [service/INSTALL.md](service/INSTALL.md)  
   → Справочник по переменным и mount: [service/README.md](service/README.md)
+- **`install.sh` / `update.sh`** — bootstrap-скрипты для `curl | bash`.
 - **`docker/`** — Docker-образ CS2-сервера (SteamRT3).
 - **`egg/`** — Pelican egg: `pelican.yaml` (основной) и `pelican.json` (тот же egg в старом формате экспорта).
 
@@ -16,17 +17,24 @@
 
 ## Быстрый старт
 
+Установка updater'а на хост — одной командой:
+
 ```bash
-sudo git clone https://github.com/Armatura-Create/CS2-pelican.git /opt/cs2-updater
-cd /opt/cs2-updater/service
-sudo ./install.sh
+curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/install.sh | sudo bash
 ```
 
-Дальше: проверить ключи (`./test-pelican.sh`), запустить сервис и дождаться закачки
-игры, настроить mount, импортировать egg.
+Обновление — тоже:
 
-**Пошагово, со всеми проверками и подводными камнями —
-[service/INSTALL.md](service/INSTALL.md).** Там же процедура обновления и откат.
+```bash
+curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/update.sh | sudo bash
+```
+
+Скрипты качают архив релиза (только `service/`, без `docker/` и `egg/`), сверяют
+контрольную сумму и всё настраивают. `update.sh` умеет откатываться сам, если
+сервис после обновления не поднялся.
+
+Дальше — настроить mount в Wings и панели и импортировать `egg/pelican.yaml`.
+Пошагово: **[service/INSTALL.md](service/INSTALL.md)**.
 
 ---
 
@@ -122,6 +130,27 @@ css_restart_notify <осталось секунд>
 `Using Rcon` (`RCON_ENABLED`) добавляет `-usercon` и биндит сервер на `0.0.0.0`.
 При пустом `RCON_PASSWORD` egg **не включит RCON** и напишет ошибку в консоль:
 RCON без пароля — это полный контроль над сервером для любого, кто дотянется до порта.
+
+---
+
+## Релизы и CI
+
+`service/` публикуется GitHub-релизами. Версия берётся из имени тега:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Дальше [`.github/workflows/release.yml`](.github/workflows/release.yml) сам
+проверит скрипты, соберёт `cs2-updater.tar.gz` (содержимое `service/` плюс файл
+`VERSION`), посчитает `sha256`, убедится, что архив разворачивается и не содержит
+`.env`, и опубликует релиз. `install.sh` и `update.sh` на дедиках берут именно эти
+файлы, поэтому сломанный архив до серверов не доедет.
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) на каждый push и PR гоняет
+`bash -n`, `shellcheck -S error`, самопроверку логики аддонов, сверку
+`pelican.yaml` с `pelican.json` и проверку, что `-usercon` добавляется только при
+`RCON_ENABLED=1`. Плюс сборку docker-образа.
 
 ---
 

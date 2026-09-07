@@ -6,9 +6,16 @@
 
 | Каталог | Где выполняется | Чем запускается |
 |---|---|---|
-| `service/` | Linux-хост, вне Docker | systemd (`install.sh` создаёт unit) |
+| `service/` | Linux-хост, вне Docker | systemd (unit создаёт `service/configure.sh`) |
 | `docker/` | внутри контейнера сервера | Wings, через `entrypoint.sh` |
 | `egg/` | нигде, это данные | импортируется в панель |
+| `install.sh`, `update.sh` | Linux-хост | человек через `curl \| bash` |
+
+**Три скрипта с похожими ролями, не путать:**
+`install.sh` (корень) — bootstrap: качает архив релиза и разворачивает.
+`update.sh` (корень) — bootstrap: качает новый релиз поверх установленного.
+`service/configure.sh` — интерактивный настройщик: задаёт вопросы, пишет `.env`
+и systemd-юнит. Его вызывает `install.sh`; вручную запускать нельзя — перезапишет `.env`.
 
 Один SteamCMD на хосте обновляет `$BASE_DIR/server`. Контейнеры монтируют его
 в `/mnt` **только на чтение** и работают через симлинки в `/home/container`.
@@ -52,6 +59,17 @@ CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэ�
 пропуск значения теряет сообщение. Цикл использует абсолютное расписание
 (`end_time - s + 1`), чтобы задержки API не копились в дрейф.
 
+**`service/` поставляется релизами, а не клоном.** Тег `vX.Y.Z` запускает
+`.github/workflows/release.yml`: он собирает `cs2-updater.tar.gz` из содержимого
+`service/` плюс файл `VERSION` с именем тега, считает sha256 и публикует релиз.
+`update.sh` сравнивает `VERSION` в установке с тем, что в архиве. Значит:
+**новый файл в `service/` попадёт на дедики только после тега**, а всё вне
+`service/` не попадёт туда никогда.
+
+**Обновление на хосте обязано пережить сбой.** `update.sh` копирует каталог
+в `.backup-<дата>` до подмены и откатывается сам, если сервис не поднялся.
+Меняете его — сохраните это свойство.
+
 ## Ловушки bash, на которых тут уже обжигались
 
 Все скрипты работают под `set -Eeuo pipefail` с `trap ... ERR`.
@@ -66,18 +84,33 @@ CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэ�
   таймаут) роняет присваивание. Используйте `pelican_request` или `|| raw=...`.
 - **`cmd | head -n1` при `pipefail`** валит конвейер через SIGPIPE.
   В jq берите `... | first // empty`.
+- **`rsync -a` сверяет файлы по паре «размер + mtime», а не по содержимому.**
+  Все `VERSION` одной длины (`v1.0.0`, `v1.1.0`), и при совпадении меток времени
+  файл молча не переносится, а rsync возвращает 0. `update.sh` поэтому использует
+  `--checksum` и **проверяет `VERSION` на диске после подмены**: код возврата
+  rsync не доказывает, что обновление применилось.
 - `head -n -1` — GNU-специфично. Хост Linux, так что можно; в alpine нужен
   `coreutils`.
 
 ## Проверка
 
+То же, что гоняет CI (`.github/workflows/ci.yml`):
+
 ```bash
-find docker service -name '*.sh' -exec bash -n {} \;
+find docker service -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
 # логика аддонов (gameinfo.gi + разбор релизов GitHub)
 docker run --rm -v "$PWD/docker:/src" alpine:3 \
     sh -c 'apk add -q bash jq && bash /src/scripts/test-addons.sh'
+
+# shellcheck на уровне error — репозиторий держим чистым
+docker run --rm -v "$PWD:/src:ro" -w /src koalaman/shellcheck-alpine:stable \
+    sh -c 'shellcheck -S error install.sh update.sh && find docker service -name "*.sh" -print0 | xargs -0 shellcheck -S error'
 ```
+
+Bootstrap-скрипты проверяются локально через `BASE_URL`: собираете архив как CI,
+поднимаете `python3 -m http.server` и запускаете `install.sh`/`update.sh`
+с `BASE_URL=http://localhost:8000/...` — GitHub не нужен.
 
 Полный прогон egg'а: собрать образ, подложить фальшивый `/mnt`
 (`game/bin/`, `game/csgo/steam.inf`, `game/csgo/gameinfo.gi` с якорем

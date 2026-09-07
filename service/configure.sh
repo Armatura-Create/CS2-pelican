@@ -1,4 +1,9 @@
 #!/bin/bash
+#
+# Интерактивный настройщик: спрашивает параметры, пишет .env и systemd-юнит.
+# Его вызывает install.sh при установке. Вручную запускать НЕ нужно —
+# он перезапишет .env с вашими токенами. Для обновления есть update.sh.
+#
 set -Eeuo pipefail
 
 # Работаем от каталога скрипта, чтобы запуск из другого cwd не ломал пути
@@ -88,7 +93,7 @@ EOF
 # Основной процесс установки
 ########################################
 main() {
-    log_message "Добро пожаловать в установщик CS2 Updater!" "info"
+    log_message "Добро пожаловать в настройщик CS2 Updater!" "info"
 
     # 1) Устанавливаем зависимости
     install_dependencies
@@ -188,7 +193,7 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl enable "$SERVICE_NAME"
 
-    log_message "Установка завершена. Используйте 'sudo systemctl start $SERVICE_NAME' для запуска." "success"
+    log_message "Настройка завершена. Запуск: sudo systemctl start $SERVICE_NAME" "success"
 }
 
 main

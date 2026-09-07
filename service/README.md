@@ -8,8 +8,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  Хост (Linux)                                               │
 │                                                             │
-│  service/ (этот каталог)                                    │
-│  ├── install.sh      → установка, создание .env, systemd    │
+│  /opt/cs2-updater/ (этот каталог)                           │
+│  ├── configure.sh    → настройка, создание .env, systemd    │
 │  ├── start.sh        → основной цикл updater'а              │
 │  ├── test-pelican.sh → проверка API-ключей Pelican          │
 │  └── .env            → все настройки                        │
@@ -34,23 +34,19 @@
 ## Быстрый старт
 
 ```bash
-sudo git clone https://github.com/Armatura-Create/CS2-pelican.git /opt/cs2-updater
-cd /opt/cs2-updater/service
-sudo ./install.sh
-sudo ./test-pelican.sh     # проверить ключи до запуска
-sudo systemctl start cs2-updater.service
+curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/install.sh | sudo bash
 ```
 
 ⚠️ Первый запуск качает ~40 ГБ файлов игры — это долго.
 
-**Полная пошаговая инструкция (установка, обновление, откат, удаление):
+**Пошаговая инструкция (установка, обновление, откат, удаление):
 [INSTALL.md](INSTALL.md).** Этот файл — справочник по переменным и настройке mount.
 
 ---
 
 ## Переменные `.env`
 
-Файл создаётся автоматически при `./install.sh`. Пример: `.env.example`.
+Файл создаётся автоматически при `./configure.sh`. Пример: `.env.example`.
 
 ### Пути и SteamCMD
 
@@ -153,7 +149,7 @@ css_restart_notify <осталось секунд>
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
 | `LOG_FILE_ENABLED` | Писать лог в `logs/Base_file_log.txt-ГГГГ-ММ-ДД` (хранится 7 дней) | `1` |
 
-> `.env` содержит пароль Steam и оба токена панели. `install.sh` создаёт его с
+> `.env` содержит пароль Steam и оба токена панели. Установщик создаёт его с
 > правами `600`. Если файл делался вручную — выставьте их сами:
 > ```bash
 > chmod 600 .env
@@ -279,7 +275,8 @@ ls -la /mnt && ls -la /mnt/game/bin
 
 ## systemd
 
-`install.sh` создаёт unit-файл в `/etc/systemd/system/`.
+Unit-файл в `/etc/systemd/system/` создаёт `configure.sh` — его запускает
+`install.sh`, вручную вызывать не нужно.
 
 Имя сервиса можно вводить как `cs2-updater` — `.service` добавится автоматически.
 
@@ -297,9 +294,12 @@ journalctl -u cs2-updater.service -f
 
 | Каталог | Назначение |
 |---|---|
-| `service/` | Updater на хосте (этот README) |
+| `service/` | Updater на хосте (этот README). Публикуется релизами |
 | `docker/` | Docker-образ для egg CS2 |
 | `egg/` | Конфигурация Pelican egg (`pelican.yaml`) |
+| `install.sh`, `update.sh` | bootstrap для `curl \| bash`, в корне репозитория |
+
+На хост попадает только содержимое `service/` — `docker/` и `egg/` там не нужны.
 
 ---
 
@@ -368,8 +368,8 @@ Updater **не падает** при ошибке Pelican API — продолж
 
 ### systemd: `Is a directory`
 
-Исправлено в текущей версии `install.sh`. Переустановите:
+Исправлено. Обновитесь:
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/update.sh | sudo bash
 ```

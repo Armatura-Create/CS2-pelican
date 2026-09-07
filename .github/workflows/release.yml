@@ -1,0 +1,77 @@
+name: release
+
+# Тег вида v1.2.3 -> собираем архив с service/ и публикуем релиз.
+# Версия берётся из имени тега и кладётся в файл VERSION внутри архива —
+# по нему update.sh на дедике понимает, нужно ли обновляться.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия для ручной сборки, например v1.0.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Собрать и опубликовать
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Плохой релиз хуже отсутствующего: сначала проверяем, потом публикуем
+      - name: Проверить скрипты
+        run: |
+          find service -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          shellcheck -S error install.sh update.sh
+          find service -name '*.sh' -print0 | xargs -0 shellcheck -S error
+
+      - name: Определить версию
+        id: ver
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          case "$VERSION" in
+            v[0-9]*) : ;;
+            *) echo "Версия должна начинаться с v и цифры, получено: $VERSION"; exit 1 ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Версия релиза: $VERSION"
+
+      - name: Собрать архив
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          mkdir -p dist/cs2-updater
+          cp -r service/. dist/cs2-updater/
+          # в архив не должно попасть ничего от конкретной установки
+          rm -rf dist/cs2-updater/.env dist/cs2-updater/logs
+          echo "$VERSION" > dist/cs2-updater/VERSION
+          chmod +x dist/cs2-updater/*.sh
+          tar -czf cs2-updater.tar.gz -C dist cs2-updater
+          sha256sum cs2-updater.tar.gz > cs2-updater.tar.gz.sha256
+          echo "--- содержимое архива:"
+          tar -tzf cs2-updater.tar.gz
+
+      - name: Проверить, что архив разворачивается и не содержит секретов
+        run: |
+          mkdir -p check && tar -xzf cs2-updater.tar.gz -C check --strip-components=1
+          test -x check/start.sh
+          test -x check/configure.sh
+          test -x check/test-pelican.sh
+          test -f check/utils/logging.sh
+          test -f check/VERSION
+          test ! -e check/.env
+          grep -q '^v[0-9]' check/VERSION
+          echo "Архив в порядке"
+
+      - name: Опубликовать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.ver.outputs.version }}" \
+            --title "${{ steps.ver.outputs.version }}" \
+            --generate-notes \
+            cs2-updater.tar.gz cs2-updater.tar.gz.sha256

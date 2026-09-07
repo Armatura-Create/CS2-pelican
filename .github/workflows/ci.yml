@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Проверка скриптов и egg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Синтаксис всех bash-скриптов
+        run: |
+          find docker service -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash -n install.sh
+          bash -n update.sh
+
+      - name: shellcheck
+        run: |
+          shellcheck -S error install.sh update.sh
+          find docker service -name '*.sh' -print0 | xargs -0 shellcheck -S error
+
+      - name: Самопроверка логики аддонов
+        run: sudo bash docker/scripts/test-addons.sh
+
+      - name: egg — YAML и JSON должны совпадать
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+          python3 - <<'PY'
+          import json, yaml
+          y = yaml.safe_load(open('egg/pelican.yaml'))
+          j = json.load(open('egg/pelican.json'))
+          assert y['variables'] == j['variables'], 'variables разошлись'
+          assert json.loads(j['config']['files']) == y['config']['files'], 'config.files разошлись'
+          assert y['startup_commands'] == j['startup_commands'], 'startup разошлись'
+          names = [v['env_variable'] for v in y['variables']]
+          assert len(names) == len(set(names)), 'дубли env_variable'
+          sorts = [v['sort'] for v in y['variables']]
+          assert len(sorts) == len(set(sorts)), 'дубли sort'
+          print('egg OK:', len(names), 'переменных')
+          PY
+
+      - name: RCON — флаг -usercon только при RCON_ENABLED=1
+        run: |
+          python3 -c "
+          import yaml,re
+          s = yaml.safe_load(open('egg/pelican.yaml'))['startup_commands']['Default']
+          open('/tmp/startup','w').write(s)
+          "
+          for rcon in 0 1; do
+            out=$(RCON_ENABLED=$rcon VAC_ENABLED=1 BOTS_ENABLED=1 TV_ENABLED=0 DEBUG=0 \
+                  STARTUP="$(cat /tmp/startup)" \
+                  bash -c 'eval echo "$(echo "$STARTUP" | sed -e "s/{{/\${/g" -e "s/}}/}/g")"')
+            if [ "$rcon" = 1 ]; then
+              echo "$out" | grep -q -- '-usercon' || { echo "RCON_ENABLED=1, но -usercon отсутствует"; exit 1; }
+            else
+              echo "$out" | grep -q -- '-usercon' && { echo "RCON_ENABLED=0, но -usercon добавлен"; exit 1; }
+            fi
+          done
+          echo "RCON OK"
+
+  docker:
+    name: Сборка образа
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build
+        run: docker build -t cs2-basefiles:ci docker/
