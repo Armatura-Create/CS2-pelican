@@ -185,6 +185,11 @@ Type=simple
 ExecStart=${service_dir}/start.sh
 WorkingDirectory=${service_dir}
 Restart=always
+# Без паузы systemd успевает сделать StartLimitBurst (5) рестартов за доли
+# секунды, упирается в лимит и гасит юнит насовсем — «Start request repeated
+# too quickly». Для апдейтера это худший исход: его сбои обычно временные
+# (кончилось место, пропала сеть), и он обязан продолжать попытки.
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

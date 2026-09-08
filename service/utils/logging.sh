@@ -51,7 +51,7 @@ clean_old_logs() {
     [[ "$LOG_FILE_ENABLED" == "1" ]] || return 0
 
     local log_dir="./logs"  # например, храним логи в ./logs
-    mkdir -p "$log_dir"
+    mkdir -p "$log_dir" 2>/dev/null || return 0
 
     # Удаляем файлы Base_file_log.txt-YYYY-MM-DD старше LOG_RETENTION_DAYS
     find "$log_dir" -name "${LOG_FILE_BASENAME}-*" -type f -mtime "+$LOG_RETENTION_DAYS" -exec rm -f {} \; 2>/dev/null || true
@@ -86,13 +86,20 @@ log_message() {
             >&2 printf "%b%s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
     esac
 
-    # Пишем в файл, если включено
+    # Пишем в файл, если включено.
+    #
+    # Запись — строго best-effort: файловый лог НЕ имеет права ронять апдейтер.
+    # Кончилось место на разделе (CS2 — это ~40 ГБ, случается регулярно) —
+    # `echo >>` возвращает 1, ERR-трап под `set -Eeuo pipefail` убивает start.sh,
+    # systemd перезапускает его, за 5 падений подряд упирается в StartLimitBurst
+    # и гасит юнит насовсем. То есть из-за неудачной строчки лога переставал
+    # работать весь апдейтер — ровно тогда, когда он нужнее всего.
     if [[ "$LOG_FILE_ENABLED" == "1" ]]; then
-        local log_dir="./logs"
-        mkdir -p "$log_dir"
-        local logfile="$log_dir/$(get_log_filename_for_today)"
-
-        echo "[$timestamp] [$type] $message" >> "$logfile"
+        local log_dir="./logs" logfile
+        if mkdir -p "$log_dir" 2>/dev/null; then
+            logfile="$log_dir/$(get_log_filename_for_today)"
+            echo "[$timestamp] [$type] $message" >> "$logfile" 2>/dev/null || true
+        fi
     fi
 }
 

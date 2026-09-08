@@ -67,16 +67,21 @@ install_or_update() {
 
     log_message "Запускаем SteamCMD для установки/обновления CS2 (appid $SRCDS_APPID)..." "running"
 
-    # `if !` вместо проверки $? после команды: под `set -e` до неё было не дойти.
+    # `|| sc_exit=$?`, а НЕ `if ! cmd; then sc_exit=$?`: внутри ветки `then`
+    # у `if ! cmd` в $? лежит статус самого отрицания, то есть всегда 0.
+    # Из-за этого код возврата SteamCMD терялся: в лог шло «код 0», функция
+    # возвращала успех, и провалившееся обновление игры выдавалось за успешное.
+    # Форма `cmd || var=$?` заодно глушит errexit — до проверки мы дойдём.
     # EXTRA_FLAGS намеренно без кавычек — это список флагов.
+    local sc_exit=0
     # shellcheck disable=SC2086
-    if ! "$BASE_DIR/server/steamcmd/steamcmd.sh" \
+    "$BASE_DIR/server/steamcmd/steamcmd.sh" \
         +force_install_dir "$BASE_DIR/server" \
         +login "${login_args[@]}" \
         +app_update "$SRCDS_APPID" $EXTRA_FLAGS \
-        +quit
-    then
-        local sc_exit=$?
+        +quit || sc_exit=$?
+
+    if [ "$sc_exit" -ne 0 ]; then
         log_message "SteamCMD завершился с кодом $sc_exit. Проверьте: доступность Steam, креды, свободное место." "error"
         return "$sc_exit"
     fi

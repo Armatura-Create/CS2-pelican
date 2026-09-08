@@ -134,19 +134,57 @@ cs2_update() {
     $SUDO cp -a "$dir" "$backup"
     info "Бэкап: $backup"
 
+    # systemd латчит юнит в failed после StartLimitBurst (5) рестартов за
+    # StartLimitIntervalSec (10 с). Сломанная версия выжигает лимит за доли
+    # секунды, и следующий `systemctl start` — уже для откаченной, РАБОЧЕЙ
+    # версии — получает "Start request repeated too quickly". Поэтому перед
+    # каждым стартом счётчик сбрасываем.
+    start_service() {
+        $SUDO systemctl reset-failed "$svc" 2>/dev/null || true
+        $SUDO systemctl start "$svc" 2>/dev/null || true
+    }
+
+    # `is-active` сразу после старта ничего не доказывает: Type=simple активен
+    # мгновенно, а Restart=always поднимает упавший процесс обратно — круг
+    # падений тоже читается как active. Ждём и сверяем счётчик рестартов:
+    # после reset-failed он растёт только если процесс успел упасть.
+    service_healthy() {
+        sleep 12
+        $SUDO systemctl is-active --quiet "$svc" || return 1
+        local n
+        n="$($SUDO systemctl show -p NRestarts --value "$svc" 2>/dev/null || echo 0)"
+        [ "${n:-0}" -eq 0 ]
+    }
+
+    # Всегда возвращает 0 и сама печатает итог. Ненулевой код отсюда убил бы
+    # update.sh под `set -e` прямо посреди отката — ровно это и происходило,
+    # когда завершающий `systemctl start` спотыкался о выжженный лимит:
+    # ни лога, ни объяснения, сервис лежит.
+    rollback() {
+        cd /   # иначе rm -rf снесёт каталог, в котором мы стоим
+        if ! { $SUDO rm -rf "$dir" && $SUDO mv "$backup" "$dir"; }; then
+            warn "НЕ УДАЛОСЬ вернуть бэкап! Он лежит здесь: $backup"
+            return 0
+        fi
+        [ "$was_active" -eq 1 ] || { info "Файлы возвращены на $cur, сервис оставлен выключенным."; return 0; }
+        start_service
+        if $SUDO systemctl is-active --quiet "$svc"; then
+            ok "Откат выполнен, сервис работает на версии $cur."
+        else
+            warn "Сервис не поднялся даже после отката. Поднимите вручную:"
+            warn "  sudo systemctl reset-failed $svc && sudo systemctl start $svc"
+        fi
+        return 0
+    }
+
     # --delete убирает файлы, удалённые в новой версии; .env и logs/ сохраняем.
     # --checksum обязателен: по умолчанию rsync решает, менялся ли файл, по паре
     # «размер + mtime». VERSION у всех релизов одной длины, и при совпадении
     # меток времени файл молча не переносился бы, а rsync вернул бы успех.
-    rollback() {
-        $SUDO rm -rf "$dir" && $SUDO mv "$backup" "$dir"
-        if [ "$was_active" -eq 1 ]; then $SUDO systemctl start "$svc"; fi
-    }
-
     $SUDO rsync -a --checksum --delete --exclude='.env' --exclude='logs/' "$tmp/new/" "$dir/" || {
         warn "Подмена файлов не удалась, возвращаю бэкап..."
         rollback
-        die "Обновление откачено, сервис работает на версии $cur."
+        die "Обновление прервано, см. сообщения выше."
     }
     $SUDO chmod +x "$dir"/*.sh
 
@@ -158,7 +196,7 @@ cs2_update() {
         warn "После подмены на диске версия '${applied:-нет файла VERSION}', ожидалась '$new'."
         warn "Возвращаю бэкап..."
         rollback
-        die "Обновление откачено, сервис работает на версии $cur."
+        die "Обновление прервано, см. сообщения выше."
     fi
     ok "Файлы обновлены до $new"
 
@@ -185,15 +223,18 @@ cs2_update() {
 
     # --- запуск ---
     if [ "$was_active" -eq 1 ]; then
-        info "Запускаем сервис..."; $SUDO systemctl start "$svc"; sleep 3
-        if $SUDO systemctl is-active --quiet "$svc"; then
+        info "Запускаем сервис..."
+        start_service
+        if service_healthy; then
             ok "Сервис $svc работает."
         else
-            warn "Сервис не поднялся, откатываю на $cur..."
+            warn "Сервис не поднялся на новой версии, откатываю на $cur..."
+            # Журнал снимаем ДО отката: после него последние строки будут уже
+            # от перезапуска старой версии и спрячут настоящую причину сбоя.
+            $SUDO journalctl -u "$svc" -n 30 --no-pager >&2
             $SUDO systemctl stop "$svc" 2>/dev/null || true
             rollback
-            $SUDO journalctl -u "$svc" -n 30 --no-pager >&2
-            die "Автоматический откат на $cur выполнен. Разберитесь по логу выше."
+            die "Обновление прервано, см. сообщения выше."
         fi
     else
         info "Сервис не был запущен, оставляю выключенным: sudo systemctl start $svc"

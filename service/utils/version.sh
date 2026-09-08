@@ -47,20 +47,33 @@ update_available() {
     fi
 
     local up_to_date
-    up_to_date="$(echo "$response" | jq -r '.response.up_to_date // empty')"
+    # БЕЗ `// empty`: оператор // в jq подставляет альтернативу не только для
+    # null, но и для false. А false здесь — это и есть «вышло обновление»,
+    # поэтому сигнал молча терялся: up_to_date всегда оказывался пустым,
+    # сравнение с "false" не срабатывало, и апдейтер никогда не видел обновлений.
+    up_to_date="$(echo "$response" | jq -r '.response.up_to_date')"
 
-    if [ "$up_to_date" = "false" ]; then
-        local required_version message
-        required_version="$(echo "$response" | jq -r '.response.required_version // "?"')"
-        message="$(echo "$response" | jq -r '.response.message // ""')"
+    case "$up_to_date" in
+        false)
+            local required_version message
+            required_version="$(echo "$response" | jq -r '.response.required_version // "?"')"
+            message="$(echo "$response" | jq -r '.response.message // ""')"
 
-        log_message "Доступна новая версия CS2: $required_version (текущая $current_version)" "running"
-        [ -n "$message" ] && log_message "Сообщение Steam: $message" "debug"
-        return 0
-    fi
-
-    log_message "Сервер уже на актуальной версии: $current_version" "debug"
-    return 1
+            log_message "Доступна новая версия CS2: $required_version (текущая $current_version)" "running"
+            [ -n "$message" ] && log_message "Сообщение Steam: $message" "debug"
+            return 0
+            ;;
+        true)
+            log_message "Сервер уже на актуальной версии: $current_version" "debug"
+            return 1
+            ;;
+        *)
+            # ни true, ни false — ответ не тот, что мы умеем читать.
+            # Молча считать «обновления нет» нельзя: так баг и жил незамеченным.
+            log_message "Steam API не вернул up_to_date, ответ: $response" "warning"
+            return 1
+            ;;
+    esac
 }
 
 # Оповещение о рестарте через плагин NotifyMessages.
