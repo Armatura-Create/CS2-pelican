@@ -10,7 +10,10 @@ get_game_version() {
     if [ -f "$steam_inf" ]; then
         local patch_version
         patch_version="$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2 || true)"
-        echo "${patch_version//./}"
+        # Только цифры: steam.inf от Valve приходит с CRLF, и «1.41.8.1\r»
+        # превращался в «14181\r». Возврат каретки в URL curl отвергает
+        # (код 3, «Malformed input»), и проверка версии падала всегда.
+        echo "${patch_version//[^0-9]/}"
     else
         echo ""
     fi
@@ -29,15 +32,19 @@ update_available() {
 
     local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=${SRCDS_APPID:-730}&version=$current_version&nocache=$(date +%s)"
 
-    local raw
-    raw="$(curl -sS --connect-timeout 10 --max-time 30 -w $'\n%{http_code}' "$api_url" 2>/dev/null)" || raw=$'\n000'
+    local raw curl_rc=0
+    raw="$(curl -sS --connect-timeout 10 --max-time 30 -w $'\n%{http_code}' "$api_url" 2>/dev/null)" || curl_rc=$?
+    [ "$curl_rc" -eq 0 ] || raw=$'\n000'
 
     local response http_status
     response="$(printf '%s' "$raw" | head -n -1)"
     http_status="$(printf '%s' "$raw" | tail -n1)"
 
     if [ "$http_status" != "200" ]; then
-        log_message "Steam API недоступен (HTTP $http_status). Повторим на следующей итерации." "warning"
+        # Код curl обязателен: «HTTP 000» одинаково выглядит и для упавшей сети
+        # (6 — DNS, 7 — соединение, 28 — таймаут), и для кривого URL (3).
+        # Без него неделю искали сеть, а ломался запрос.
+        log_message "Steam API не ответил (HTTP $http_status, код curl $curl_rc). Повторим на следующей итерации." "warning"
         return 1
     fi
 
