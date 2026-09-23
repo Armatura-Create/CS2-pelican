@@ -69,6 +69,7 @@ run_update_cycle() {
 
     log_message "Запускаем обратно остановленные сервера..." "running"
     start_servers_with_delay "$running_list" || true
+    verify_servers_started "$running_list" || true
 
     [ -z "$lock_fd" ] || exec {lock_fd}>&-
     log_message "Цикл обновления CS2 завершён." "info"

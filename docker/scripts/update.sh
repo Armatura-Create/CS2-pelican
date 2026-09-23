@@ -319,15 +319,20 @@ github_api() {
     local path="$2"
     local out_json="$3"
 
+    # Токен — через stdin (`-H @-`), не аргументом: иначе он виден в `ps`.
     local -a headers=(-H "Accept: application/vnd.github+json")
     if [ -n "${GITHUB_TOKEN:-}" ]; then
-        headers+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+        headers+=(-H @-)
     fi
 
+    # `|| true`, а не `|| echo 000`: при сетевой ошибке curl сам печатает 000
+    # через -w, и echo давал «000000» — ветка 000 ниже не срабатывала никогда.
     local code
-    code="$(curl -sS -m 30 -o "$out_json" -w '%{http_code}' \
-        "${headers[@]}" \
-        "https://api.github.com/repos/$repo/$path" 2>/dev/null || echo "000")"
+    code="$(printf 'Authorization: Bearer %s\n' "${GITHUB_TOKEN:-}" \
+        | curl -sS -m 30 -o "$out_json" -w '%{http_code}' \
+            "${headers[@]}" \
+            "https://api.github.com/repos/$repo/$path" 2>/dev/null || true)"
+    code="${code:-000}"
 
     case "$code" in
         200) return 0 ;;

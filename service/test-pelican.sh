@@ -26,10 +26,11 @@ api_request() {
     local token="$3"
     local data="${4:-}"
 
+    # Токен через stdin, а не аргументом — иначе он виден всем в `ps`
     local curl_args=(
         -s -w "\n%{http_code}"
         -X "$method"
-        -H "Authorization: Bearer $token"
+        -H @-
         -H "Accept: application/json"
     )
 
@@ -37,7 +38,7 @@ api_request() {
         curl_args+=(-H "Content-Type: application/json" --data "$data")
     fi
 
-    curl "${curl_args[@]}" "$url"
+    printf 'Authorization: Bearer %s\n' "$token" | curl "${curl_args[@]}" "$url"
 }
 
 parse_response() {

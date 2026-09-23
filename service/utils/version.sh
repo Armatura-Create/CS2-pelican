@@ -113,12 +113,21 @@ inform_players_and_wait() {
 
     local s now target
     for (( s = countdown; s >= 1; s-- )); do
+        # Всем серверам одновременно. По очереди каждая «секунда» стоила по
+        # запросу на сервер (~0,8 с): на двух серверах 300 с отсчёта шли
+        # 8 минут, на пяти — 20. Пропускать секунды нельзя (см. выше), так что
+        # укладываться в секунду можно только параллелью.
+        # skip_state_check: список running получен выше, а опрос статуса на
+        # каждую секунду удвоил бы число запросов к панели.
+        # Ждём только свои запросы: голый `wait` ждал бы ВСЕ фоновые процессы
+        # оболочки, и любой другой фоновый процесс в start.sh вешал бы отсчёт.
+        local -a pids=()
         while IFS= read -r srv_id; do
             [ -n "$srv_id" ] || continue
-            # skip_state_check: список running получен выше, а опрос статуса на
-            # каждую секунду удвоил бы число запросов к панели
-            send_command "$srv_id" "css_restart_notify $s" skip_state_check || true
+            send_command "$srv_id" "css_restart_notify $s" skip_state_check &
+            pids+=("$!")
         done <<< "$servers"
+        [ "${#pids[@]}" -eq 0 ] || wait "${pids[@]}" || true
 
         # Абсолютное расписание: тик для «осталось s» приходится на end_time-s,
         # поэтому задержки API не накапливаются в дрейф.
@@ -151,6 +160,52 @@ stop_running_servers_for_update() {
     done <<< "$servers"
 
     printf '%s\n' "$servers"
+}
+
+# Ждёт, пока запущенные после обновления серверы дойдут до running.
+# «Панель приняла start» ничего не доказывает: после обновления CS2 до
+# 1.41.8.2 оба сервера падали через 6 секунд после старта (аддон не находил
+# сигнатуры), а updater писал «Запускаем сервер» — и молчал.
+# 0 — все поднялись, 1 — кто-то нет (подробности в логе).
+verify_servers_started() {
+    local servers_list="$1" timeout="${2:-180}"
+    [ -n "$servers_list" ] || return 0
+
+    local deadline pending="$servers_list" still id
+    deadline=$(( $(date +%s) + timeout ))
+    log_message "Проверяем, что серверы поднялись (до $timeout сек.)..." "running"
+
+    while [ -n "$pending" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep 10
+        still=""
+        while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            if [ "$(server_state "$id")" = "running" ]; then
+                log_message "Сервер $id работает." "success"
+            else
+                still+="$id"$'\n'
+            fi
+        done <<< "$pending"
+        pending="$still"
+    done
+
+    if [ -z "$pending" ]; then
+        log_message "Все серверы после обновления запущены." "success"
+        return 0
+    fi
+
+    local st
+    while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        st="$(server_state "$id")"
+        if [ "$st" = "unknown" ]; then
+            log_message "Сервер $id: не удалось узнать состояние — панель не ответила. Проверьте его вручную." "error"
+        else
+            log_message "Сервер $id НЕ поднялся после обновления CS2 (состояние: $st)." "error"
+            log_message "Частая причина — аддон несовместим с новой версией игры. Смотрите консоль сервера в панели." "error"
+        fi
+    done <<< "$pending"
+    return 1
 }
 
 start_servers_with_delay() {

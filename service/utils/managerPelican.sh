@@ -19,17 +19,19 @@ PELICAN_CODE="000"
 pelican_request() {
     local method="$1" url="$2" token="$3" data="${4:-}"
 
+    # Токен — через stdin (`-H @-`), не аргументом: аргументы любого процесса
+    # видны всем пользователям хоста в `ps` и /proc/<pid>/cmdline.
     local -a args=(
         -sS --connect-timeout 10 --max-time 30
         -w $'\n%{http_code}'
         -X "$method"
-        -H "Authorization: Bearer $token"
+        -H @-
         -H "Accept: application/json"
     )
     [ -n "$data" ] && args+=(-H "Content-Type: application/json" --data "$data")
 
     local raw
-    raw="$(curl "${args[@]}" "$url" 2>/dev/null)" || raw=$'\n000'
+    raw="$(printf 'Authorization: Bearer %s\n' "$token" | curl "${args[@]}" "$url" 2>/dev/null)" || raw=$'\n000'
 
     PELICAN_BODY="$(printf '%s' "$raw" | head -n -1)"
     PELICAN_CODE="$(printf '%s' "$raw" | tail -n1)"
@@ -87,16 +89,20 @@ get_servers_by_image_app() {
     echo "$server_ids"
 }
 
-is_server_running_client() {
+# Печатает состояние сервера: running | starting | stopping | offline,
+# или unknown, если панель не ответила. Лог — в stderr, в stdout только состояние.
+server_state() {
     local identifier="$1"
     if [ -z "$identifier" ]; then
-        log_message "is_server_running_client: не указан identifier" "error"
-        return 1
+        log_message "server_state: не указан identifier" "error"
+        printf 'unknown'
+        return 0
     fi
 
     if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_API_TOKEN:-}" ]; then
         log_message "Отсутствуют PELICAN_URL / PELICAN_API_TOKEN" "error"
-        return 1
+        printf 'unknown'
+        return 0
     fi
 
     pelican_request GET \
@@ -106,12 +112,17 @@ is_server_running_client() {
     if ! pelican_ok; then
         log_message "Не удалось получить статус сервера (client API) $identifier, HTTP $PELICAN_CODE" "error"
         log_message "Ответ: $PELICAN_BODY" "debug"
-        return 1
+        printf 'unknown'
+        return 0
     fi
 
     local current_state
     current_state="$(echo "$PELICAN_BODY" | jq -r '.attributes.current_state // empty' 2>/dev/null || true)"
-    [ "$current_state" = "running" ]
+    printf '%s' "${current_state:-unknown}"
+}
+
+is_server_running_client() {
+    [ "$(server_state "$1")" = "running" ]
 }
 
 get_running_servers_by_image() {
