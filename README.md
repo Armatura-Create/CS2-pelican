@@ -31,7 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/
 
 Скрипты качают архив релиза (только `service/`, без `docker/` и `egg/`), сверяют
 контрольную сумму и всё настраивают. `update.sh` умеет откатываться сам, если
-сервис после обновления не поднялся.
+сервис после обновления не поднялся. Обновляться сервис может и сам, каждую ночь:
+`sudo /opt/cs2-updater/autoupdate.sh on` — подробнее в [service/INSTALL.md](service/INSTALL.md).
 
 Дальше — настроить mount в Wings и панели и импортировать `egg/pelican.yaml`.
 Пошагово: **[service/INSTALL.md](service/INSTALL.md)**.

@@ -46,6 +46,8 @@ jobs:
           VERSION="${{ steps.ver.outputs.version }}"
           mkdir -p dist/cs2-updater
           cp -r service/. dist/cs2-updater/
+          # update.sh нужен и в установке: его ночью запускает таймер автообновления
+          cp update.sh dist/cs2-updater/
           # в архив не должно попасть ничего от конкретной установки и мусора ОС
           rm -rf dist/cs2-updater/.env dist/cs2-updater/logs
           find dist/cs2-updater \( -name '.DS_Store' -o -name 'Thumbs.db' -o -name '*.swp' \) -delete
@@ -62,6 +64,8 @@ jobs:
           test -x check/start.sh
           test -x check/configure.sh
           test -x check/test-pelican.sh
+          test -x check/update.sh
+          test -x check/autoupdate.sh
           test -f check/utils/logging.sh
           test -f check/VERSION
           test ! -e check/.env

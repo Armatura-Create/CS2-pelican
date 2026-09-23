@@ -173,6 +173,7 @@ ${YELLOW}Осталось в панели:${NC}
 
 Обновление:
   curl -fsSL https://raw.githubusercontent.com/$REPO/master/update.sh | sudo bash
+  Автообновление: sudo $INSTALL_DIR/autoupdate.sh status
 
 TXT
 }

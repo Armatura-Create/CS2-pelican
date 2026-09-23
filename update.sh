@@ -13,6 +13,9 @@
 #   FORCE=1       обновлять даже посреди цикла обновления CS2 (опасно)
 #   BASE_URL      зеркало вместо GitHub Releases
 #
+# Этот же скрипт лежит в каталоге установки: его ночью запускает таймер
+# автообновления (см. autoupdate.sh) — уже из опубликованного релиза.
+#
 # Всё тело в функции, вызов последней строкой: оборванная закачка не выполнит огрызок.
 
 set -Eeuo pipefail
@@ -58,10 +61,17 @@ cs2_update() {
     # --- не идёт ли прямо сейчас обновление CS2 ---
     # Убить updater посреди цикла = оставить игровые серверы выключенными:
     # он их уже погасил, а поднять обратно уже не успеет.
+    # CYCLE_LOCK держит start.sh весь цикл: от оповещения игроков до запуска
+    # серверов. Путь обязан совпадать с CYCLE_LOCK в service/start.sh.
+    local cycle_lock="/run/cs2-updater-cycle.lock"
     local busy=""
     if pgrep -f 'steamcmd' >/dev/null 2>&1; then
         busy="работает SteamCMD"
+    elif [ -e "$cycle_lock" ] && ! flock -n "$cycle_lock" true 2>/dev/null; then
+        busy="идёт цикл обновления CS2"
     else
+        # Для установок старше лока (до v1.2.6): видит только фазу, когда
+        # серверы уже погашены, — отсчёт для игроков она пропускает.
         local jl stopped started
         jl="$($SUDO journalctl -u "$svc" -n 200 --no-pager 2>/dev/null || true)"
         stopped="$(printf '%s' "$jl" | grep -n 'Останавливаем сервер'                 | tail -n1 | cut -d: -f1 || true)"
@@ -82,7 +92,11 @@ cs2_update() {
     fi
 
     # --- качаем ---
-    $SUDO apt-get install -y -qq curl ca-certificates tar rsync >/dev/null 2>&1 || true
+    # apt — только если чего-то не хватает: при ночном запуске по таймеру
+    # apt-get каждый раз брал бы блокировку dpkg и мешал unattended-upgrades.
+    if ! command -v rsync >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+        $SUDO apt-get install -y -qq curl ca-certificates tar rsync >/dev/null 2>&1 || true
+    fi
     command -v rsync >/dev/null 2>&1 || die "Нужен rsync: sudo apt-get install -y rsync"
 
     # BASE_URL позволяет подставить зеркало или локальный каталог (используется в тестах)
@@ -96,8 +110,10 @@ cs2_update() {
     fi
 
     local tmp; tmp="$(mktemp -d)"
+    # EXIT, а не RETURN: die делает exit, и RETURN-трап тогда не срабатывал —
+    # каждая неудачная ночная попытка оставляла бы мусор в /tmp.
     # shellcheck disable=SC2064
-    trap "rm -rf '$tmp'" RETURN
+    trap "rm -rf '$tmp'" EXIT
 
     info "Качаем релиз ($VERSION)..."
     curl -fsSL --retry 3 --connect-timeout 15 -o "$tmp/$ASSET" "$url_base/$ASSET" \
@@ -148,8 +164,10 @@ cs2_update() {
     # мгновенно, а Restart=always поднимает упавший процесс обратно — круг
     # падений тоже читается как active. Ждём и сверяем счётчик рестартов:
     # после reset-failed он растёт только если процесс успел упасть.
+    # 40 с: сразу после старта идёт первая проверка версии, у её curl таймаут
+    # 30 с. Код, который ломается после этой проверки, должен успеть упасть.
     service_healthy() {
-        sleep 12
+        sleep 40
         $SUDO systemctl is-active --quiet "$svc" || return 1
         local n
         n="$($SUDO systemctl show -p NRestarts --value "$svc" 2>/dev/null || echo 0)"
@@ -160,6 +178,14 @@ cs2_update() {
     # update.sh под `set -e` прямо посреди отката — ровно это и происходило,
     # когда завершающий `systemctl start` спотыкался о выжженный лимит:
     # ни лога, ни объяснения, сервис лежит.
+    # С автообновлением бэкапы копились бы бесконечно. Три последних —
+    # достаточно, чтобы откатиться, если плохую версию заметили не сразу.
+    prune_backups() {
+        local old
+        old="$(ls -1d "$dir".backup-* 2>/dev/null | sort | head -n -3 || true)"
+        [ -z "$old" ] || { printf '%s\n' "$old" | xargs -r $SUDO rm -rf; info "Старые бэкапы удалены, оставлены 3 последних."; }
+    }
+
     rollback() {
         cd /   # иначе rm -rf снесёт каталог, в котором мы стоим
         if ! { $SUDO rm -rf "$dir" && $SUDO mv "$backup" "$dir"; }; then
@@ -227,6 +253,7 @@ cs2_update() {
         start_service
         if service_healthy; then
             ok "Сервис $svc работает."
+            prune_backups
         else
             warn "Сервис не поднялся на новой версии, откатываю на $cur..."
             # Журнал снимаем ДО отката: после него последние строки будут уже

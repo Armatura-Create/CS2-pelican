@@ -32,8 +32,24 @@ check_initial_install() {
     fi
 }
 
+# Лок держится весь цикл обновления CS2 — от оповещения игроков до запуска
+# серверов. По нему update.sh (в том числе ночной автоматический) видит, что
+# останавливать сервис сейчас нельзя. flock снимается ядром вместе со смертью
+# процесса, поэтому «зависшего» лока после падения не бывает.
+# Путь обязан совпадать с CYCLE_LOCK в update.sh.
+CYCLE_LOCK="/run/cs2-updater-cycle.lock"
+
 # 2) Обновление: оповестить, остановить, обновить, поднять обратно
 run_update_cycle() {
+    # Без лока цикл всё равно идёт: обновить игру важнее, чем защитить его
+    # от одновременного обновления самого апдейтера.
+    local lock_fd=""
+    if { exec {lock_fd}>"$CYCLE_LOCK"; } 2>/dev/null; then
+        flock "$lock_fd" || true
+    else
+        log_message "Не удалось открыть $CYCLE_LOCK — update.sh не увидит, что идёт обновление CS2." "warning"
+    fi
+
     local cd_time="${UPDATE_COUNTDOWN_TIME:-300}"
     log_message "Оповещаем игроков и ждём $cd_time сек. перед перезапуском..." "running"
     inform_players_and_wait "$cd_time" || true
@@ -53,6 +69,9 @@ run_update_cycle() {
 
     log_message "Запускаем обратно остановленные сервера..." "running"
     start_servers_with_delay "$running_list" || true
+
+    [ -z "$lock_fd" ] || exec {lock_fd}>&-
+    log_message "Цикл обновления CS2 завершён." "info"
 }
 
 main_loop() {

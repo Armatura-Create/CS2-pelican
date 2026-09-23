@@ -155,6 +155,10 @@ main() {
         "Включить лог в файл? (1 - да, 0 - нет)" \
         "1"
 
+    prompt_with_default SELF_AUTOUPDATE \
+        "Обновлять сам CS2 Updater автоматически, раз в сутки ночью? (1 - да, 0 - нет)" \
+        "1"
+
     # 3) Создаём .env
     create_env_file
 
@@ -197,6 +201,10 @@ EOF
 
     sudo systemctl daemon-reload
     sudo systemctl enable "$SERVICE_NAME"
+
+    if [ "$SELF_AUTOUPDATE" = "1" ]; then
+        sudo ./autoupdate.sh on || log_message "Автообновление не включилось. Позже: sudo ./autoupdate.sh on" "warning"
+    fi
 
     log_message "Настройка завершена. Запуск: sudo systemctl start $SERVICE_NAME" "success"
 }
