@@ -46,6 +46,16 @@
 только подтягивать ли новые версии. Отсутствующий аддон ставится независимо от
 автообновления.
 
+**Аддоны обновляются только вперёд** (`version_gt`), кроме явной фиксации
+`SWIFTLY_VERSION`. Иначе выключенная бета откатывала бы рабочую
+`v1.4.11-beta.10` на стабильную, которая падает с текущей CS2. Версии —
+semver: пре-релиз старше своего релиза. Строками сравнивать нельзя
+(`beta.10` < `beta.2`), и GitHub отдаёт релизы не по порядку версий.
+
+**`gameinfo.gi` обновляется с хоста сам** (`refresh_gameinfo`), когда Valve его
+меняет: базовая версия лежит в `gameinfo.gi.host`, прежний файл — в `.bak`.
+Правки пользователя живут до следующего изменения файла Valve.
+
 **Наличие аддона проверяется по файлу-маркеру, не по каталогу** (`addon_marker`).
 CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэтому каталог
 `addons/metamod` существует и без самого MetaMod.
@@ -123,6 +133,9 @@ ERR-трап под `set -Eeuo pipefail` убьёт `start.sh`, systemd пере
   в логе было лишь «HTTP 000». Из файлов Valve оставляйте только нужные
   символы (`${v//[^0-9]/}`), а фальшивый `steam.inf` в тестах пишите с CRLF,
   иначе баг не воспроизведётся.
+- **Контейнер CS2 без открытого stdin сразу завершается** (после загрузки
+  `libengine2.so`, код 0). Wings держит stdin открытым; запуская образ руками
+  для проверки — `docker run -i`, иначе «сервер не стартует» окажется ложным.
 - `head -n -1` — GNU-специфично. Хост Linux, так что можно; в alpine нужен
   `coreutils`.
 
@@ -133,9 +146,10 @@ ERR-трап под `set -Eeuo pipefail` убьёт `start.sh`, systemd пере
 ```bash
 find docker service -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
-# логика аддонов (gameinfo.gi + разбор релизов GitHub)
+# логика аддонов (gameinfo.gi, выбор релизов GitHub, сравнение версий);
+# coreutils обязателен — сравнение версий опирается на GNU sort -V, как в образе
 docker run --rm -v "$PWD/docker:/src" alpine:3 \
-    sh -c 'apk add -q bash jq && bash /src/scripts/test-addons.sh'
+    sh -c 'apk add -q bash jq coreutils && bash /src/scripts/test-addons.sh'
 
 # shellcheck на уровне error — репозиторий держим чистым
 docker run --rm -v "$PWD:/src:ro" -w /src koalaman/shellcheck-alpine:stable \

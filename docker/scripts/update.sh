@@ -52,6 +52,42 @@ addon_autoupdate() {
     esac
 }
 
+# Разрешены ли бета-версии (pre-release на GitHub). Дефолт обязан совпадать с egg.
+# После обновления CS2 исправления у Swiftly выходят сначала в бете, а
+# стабильная версия падает вместе с сервером.
+addon_beta() {
+    case "$1" in
+        swiftly) printf '%s' "${SWIFTLY_BETA:-0}" ;;
+        *)       printf '%s' "0" ;;
+    esac
+}
+
+# Зафиксированная версия (тег GitHub) или пусто — выбирать самим.
+# Значение уходит в URL запроса к GitHub, поэтому пропускаем только теги.
+addon_pin() {
+    local pin=""
+    case "$1" in
+        swiftly) pin="${SWIFTLY_VERSION:-}" ;;
+    esac
+    [ -n "$pin" ] || return 0
+    if [[ "$pin" =~ ^v?[0-9][0-9A-Za-z.-]*$ ]]; then
+        printf '%s' "$pin"
+    else
+        log_message "Некорректная версия '$pin' для $(addon_name "$1") — ожидается тег вида v1.4.10. Игнорирую." "error"
+    fi
+}
+
+# 0, если версия $1 новее $2. Бета «v1.4.11-beta.10» новее «v1.4.10», но
+# старше «v1.4.11». Строковое сравнение тут не годится: «beta.10» < «beta.2»,
+# а GitHub отдаёт релизы не по порядку версий. `-` → `~`: в sort -V тильда
+# сортируется раньше конца строки, ровно как пре-релиз в semver.
+version_gt() {
+    [ "$1" != "$2" ] || return 1
+    local a="${1#v}" b="${2#v}"
+    a="${a/-/\~}"; b="${b/-/\~}"
+    [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -n1)" = "$a" ]
+}
+
 # Выбранная платформа аддонов: none | metamod | swiftly
 addon_platform() {
     local p="${ADDON_PLATFORM:-metamod}"
@@ -277,9 +313,11 @@ handle_download_and_extract() {
 # ===========================
 # GitHub API
 # ===========================
-github_latest_release() {
+# github_api <owner/repo> <путь: releases/latest | releases?per_page=30 | releases/tags/TAG> <файл>
+github_api() {
     local repo="$1"
-    local out_json="$2"
+    local path="$2"
+    local out_json="$3"
 
     local -a headers=(-H "Accept: application/vnd.github+json")
     if [ -n "${GITHUB_TOKEN:-}" ]; then
@@ -289,7 +327,7 @@ github_latest_release() {
     local code
     code="$(curl -sS -m 30 -o "$out_json" -w '%{http_code}' \
         "${headers[@]}" \
-        "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "000")"
+        "https://api.github.com/repos/$repo/$path" 2>/dev/null || echo "000")"
 
     case "$code" in
         200) return 0 ;;
@@ -303,11 +341,42 @@ github_latest_release() {
             log_message "GitHub API недоступен (сеть или таймаут) для $repo." "error"
             return 1
             ;;
+        404)
+            log_message "GitHub: не найдено $repo/$path — проверьте, что такая версия есть." "error"
+            return 1
+            ;;
         *)
             log_message "GitHub API вернул HTTP $code для $repo." "error"
             return 1
             ;;
     esac
+}
+
+# Печатает тег лучшего релиза из ответа GitHub (объект или список).
+# Черновики и релизы без нужного архива отбрасываются. Бета проходит, если
+# beta=1 или версия зафиксирована явно (тогда ставим ровно то, что сказали).
+# pick_release <json> <regex архива> <beta 0|1> <pin>
+pick_release() {
+    local tags best="" t
+    tags="$(jq -r --arg re "$2" --arg beta "$3" --arg pin "$4" '
+        (if type == "array" then . else [.] end)[]
+        | select(.draft | not)
+        | select($pin != "" or $beta == "1" or (.prerelease | not))
+        | select([.assets[]?.browser_download_url | test($re)] | any)
+        | .tag_name // empty' "$1" 2>/dev/null || true)"
+
+    while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        if [ -z "$best" ] || version_gt "$t" "$best"; then best="$t"; fi
+    done <<< "$tags"
+    printf '%s' "$best"
+}
+
+# release_asset_url <json> <regex архива> <тег>
+release_asset_url() {
+    jq -r --arg re "$2" --arg t "$3" '
+        [(if type == "array" then . else [.] end)[] | select(.tag_name == $t)
+         | .assets[]?.browser_download_url | select(test($re))] | first // empty' "$1"
 }
 
 # ===========================
@@ -324,7 +393,7 @@ ensure_addon() {
 
     [ -e "$marker" ] && installed=1
 
-    if [ "$installed" -eq 1 ] && [ "$(addon_autoupdate "$type")" != "1" ]; then
+    if [ "$installed" -eq 1 ] && [ "$(addon_autoupdate "$type")" != "1" ] && [ -z "$(addon_pin "$type")" ]; then
         log_message "$name установлен, автообновление выключено — оставляем текущую версию ($(get_current_version "$name"))." "info"
         return 0
     fi
@@ -376,13 +445,25 @@ install_github_addon() {
     rm -rf "$temp_dir"
     mkdir -p "$temp_dir" "$OUTPUT_DIR"
 
-    log_message "Проверка обновлений для $name..." "running"
-    github_latest_release "$repo" "$json" || return 1
+    # Один запрос к API в любом режиме: лимит 60/час на IP делят все контейнеры ноды.
+    local pin beta path mode
+    pin="$(addon_pin "$type")"
+    beta="$(addon_beta "$type")"
+    if [ -n "$pin" ]; then
+        path="releases/tags/$pin";   mode="зафиксирована $pin"
+    elif [ "$beta" = "1" ]; then
+        path="releases?per_page=30"; mode="включая бета-версии"
+    else
+        path="releases/latest";      mode="только стабильные"
+    fi
+
+    log_message "Проверка обновлений для $name ($mode)..." "running"
+    github_api "$repo" "$path" "$json" || return 1
 
     local new_version
-    new_version="$(jq -r '.tag_name // empty' "$json" 2>/dev/null || true)"
+    new_version="$(pick_release "$json" "$pattern" "$beta" "$pin")"
     if [ -z "$new_version" ]; then
-        log_message "Не удалось определить версию для $name (некорректный ответ GitHub)." "error"
+        log_message "Не удалось определить версию для $name: в ответе GitHub нет подходящего релиза." "error"
         return 1
     fi
 
@@ -393,15 +474,20 @@ install_github_addon() {
             log_message "У $name актуальная версия: $current_version" "success"
             return 0
         fi
-        log_message "Новая версия для $name: $new_version (была ${current_version:-неизвестна})" "running"
+        # Без фиксации — только вперёд. Иначе выключенная бета откатила бы
+        # v1.4.11-beta.10 на стабильную v1.4.10, которая как раз и падает с
+        # текущей CS2. Обновимся, когда выйдет стабильная новее стоящей беты.
+        if [ -z "$pin" ] && [ -n "$current_version" ] && version_gt "$current_version" "$new_version"; then
+            log_message "У $name стоит $current_version — новее последней подходящей ($new_version). Оставляем." "info"
+            return 0
+        fi
+        log_message "$name: ${current_version:-неизвестна} → $new_version" "running"
     else
         log_message "$name не установлен. Устанавливаю версию $new_version..." "running"
     fi
 
-    # first вместо `| head -n1`: под `set -o pipefail` SIGPIPE в head уронил бы конвейер
     local asset_url
-    asset_url="$(jq -r --arg re "$pattern" \
-        '[.assets[]?.browser_download_url | select(test($re))] | first // empty' "$json")"
+    asset_url="$(release_asset_url "$json" "$pattern" "$new_version")"
 
     if [ -z "$asset_url" ]; then
         log_message "В релизе $name не найден файл по паттерну: $pattern" "error"
@@ -554,16 +640,55 @@ sync_gameinfo() {
     return 0
 }
 
-# Предупреждаем, если Valve обновила gameinfo.gi на хосте, а в контейнере
-# лежит старая копия (или пользователь правил файл руками).
-gameinfo_drift_check() {
-    [ -f "$GAMEINFO_MNT" ] && [ -f "$GAMEINFO_FILE" ] || return 0
+# 0, если файлы различаются не только строками аддонов (их ставит sync_gameinfo)
+gameinfo_differs() {
+    ! diff -q <(grep -v 'csgo/addons/' "$1" | tr -d '\r') \
+              <(grep -v 'csgo/addons/' "$2" | tr -d '\r') >/dev/null 2>&1
+}
 
-    if ! diff -q <(grep -v 'csgo/addons/' "$GAMEINFO_FILE") \
-                 <(grep -v 'csgo/addons/' "$GAMEINFO_MNT") >/dev/null 2>&1; then
-        log_message "gameinfo.gi в контейнере отличается от версии на хосте (/mnt)." "warning"
-        log_message "Если это не ваши правки — удалите game/csgo/gameinfo.gi и перезапустите сервер." "warning"
+# Контейнер держит СВОЮ копию gameinfo.gi: дописывает туда аддоны, а /mnt —
+# только на чтение. Valve меняет этот файл с обновлениями CS2 (в 1.41.8.2 —
+# настройки Steam Audio и пути панорамы), и копия устаревает. Раньше тут было
+# лишь предупреждение «удалите файл руками» — на каждом сервере после каждого
+# обновления игры.
+#
+# Рядом лежит gameinfo.gi.host — версия с хоста, из которой сделана копия.
+# По ней отличаем обновление Valve от правок пользователя:
+#   хост совпадает с .host → Valve файл не меняла: копию и ваши правки не трогаем;
+#   хост изменился         → берём новый файл, прежний кладём в gameinfo.gi.bak.
+# Строки аддонов после этого заново расставит sync_gameinfo.
+refresh_gameinfo() {
+    local base="$GAMEINFO_FILE.host"
+
+    if [ ! -f "$GAMEINFO_MNT" ]; then
+        log_message "На хосте нет gameinfo.gi ($GAMEINFO_MNT) — проверьте, что SteamCMD установил игру." "error"
+        return 0
     fi
+
+    # Симлинк увёл бы запись в /mnt, смонтированный только на чтение
+    if [ -L "$GAMEINFO_FILE" ]; then
+        rm -f "$GAMEINFO_FILE"
+    fi
+
+    if [ -f "$GAMEINFO_FILE" ] && [ -f "$base" ] && cmp -s "$GAMEINFO_MNT" "$base"; then
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$GAMEINFO_FILE")"
+    if [ ! -f "$GAMEINFO_FILE" ]; then
+        log_message "Копируем gameinfo.gi с хоста." "info"
+    elif [ ! -f "$base" ] && ! gameinfo_differs "$GAMEINFO_FILE" "$GAMEINFO_MNT"; then
+        # Файл актуален, базы ещё нет (сервер старше этой логики) — запоминаем её
+        cp "$GAMEINFO_MNT" "$base"
+        return 0
+    else
+        cp "$GAMEINFO_FILE" "$GAMEINFO_FILE.bak"
+        log_message "gameinfo.gi устарел: на хосте новая версия от Valve (обновление CS2). Берём её." "warning"
+        log_message "Прежний файл — game/csgo/gameinfo.gi.bak. Если в нём были ваши правки, перенесите их." "warning"
+    fi
+
+    cp "$GAMEINFO_MNT" "$GAMEINFO_FILE"
+    cp "$GAMEINFO_MNT" "$base"
 }
 
 # ===========================

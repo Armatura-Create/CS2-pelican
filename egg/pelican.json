@@ -209,6 +209,33 @@
         },
         {
             "sort": 14,
+            "name": "Swiftly - Beta",
+            "description": "Ставить бета-версии Swiftly (pre-release на GitHub).\n\nПосле обновлений CS2 исправления у Swiftly обычно выходят сначала в\nбете, а стабильная версия падает вместе с сервером — включите, чтобы\nсервер поднялся на бете.\n\nВыключите — и обновления пойдут только до стабильных версий. Уже\nстоящая бета при этом не откатится: Swiftly обновится, когда выйдет\nстабильная новее неё.",
+            "env_variable": "SWIFTLY_BETA",
+            "default_value": 0,
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ]
+        },
+        {
+            "sort": 15,
+            "name": "Swiftly - Version",
+            "description": "Зафиксировать версию Swiftly: тег с GitHub, например v1.4.10 или\nv1.4.11-beta.10. Ставится ровно она — в том числе более старая, для\nотката, — независимо от автообновления и беты.\n\nПусто — версия выбирается автоматически.\n\nВерсии: https://github.com/swiftly-solution/swiftlys2/releases",
+            "env_variable": "SWIFTLY_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "nullable",
+                "string",
+                "max:64",
+                "regex:/^v?[0-9][0-9A-Za-z.-]*$/"
+            ]
+        },
+        {
+            "sort": 16,
             "name": "Filter - Enabled",
             "description": "Включить или отключить фильтр консоли, чтобы скрыть\nопределенные сообщения. Настройте его с помощью файла\n'/game/mute_messages.cfg', если включено.",
             "env_variable": "ENABLE_FILTER",
@@ -220,7 +247,7 @@
             ]
         },
         {
-            "sort": 15,
+            "sort": 17,
             "name": "Filter - Preview Mode",
             "description": "Включить или отключить режим предварительного\nпросмотра для фильтра консоли. В режиме\nпредварительного просмотра заблокированные\nсообщения отображаются красным цветом, что позволяет\nвам проверить конфигурацию фильтра.",
             "env_variable": "FILTER_PREVIEW_MODE",
@@ -232,7 +259,7 @@
             ]
         },
         {
-            "sort": 16,
+            "sort": 18,
             "name": "Junk Cleaner - Enabled",
             "description": "Автоматически очищает логи через 72 часа, файлы демо\nчерез 7 дней и резервные копии раундов через 24 часа.",
             "env_variable": "CLEANUP_ENABLED",
@@ -244,7 +271,7 @@
             ]
         },
         {
-            "sort": 17,
+            "sort": 19,
             "name": "Custom Parameters",
             "description": "Пользовательские параметры запуска, которые нужно\nдобавить в строку запуска сервере",
             "env_variable": "CUSTOM_PARAMS",
@@ -257,7 +284,7 @@
             ]
         },
         {
-            "sort": 18,
+            "sort": 20,
             "name": "Bots Enable",
             "description": "Включить / отключить ботов на вашем сервере. По\nумолчанию эта опция включена.",
             "env_variable": "BOTS_ENABLED",
@@ -269,7 +296,7 @@
             ]
         },
         {
-            "sort": 19,
+            "sort": 21,
             "name": "Workshop Collections",
             "description": "ID коллекции из Workshop",
             "env_variable": "WORKSHOP_COLLECTIONS_ID",
@@ -282,7 +309,7 @@
             ]
         },
         {
-            "sort": 20,
+            "sort": 22,
             "name": "Workshop Map",
             "description": "Запуск карты по ID из Workshop",
             "env_variable": "WORKSHOP_MAP_ID",
@@ -295,7 +322,7 @@
             ]
         },
         {
-            "sort": 21,
+            "sort": 23,
             "name": "Using Rcon",
             "description": "Включить / отключить RCON для использования RCON-команд с\nвнешними инструментами. По умолчанию эта опция\nотключена.",
             "env_variable": "RCON_ENABLED",
@@ -307,7 +334,7 @@
             ]
         },
         {
-            "sort": 22,
+            "sort": 24,
             "name": "Rcon Password",
             "description": "Пароль для удалённого администрирования сервера.\n\nОбязателен, если включён Using Rcon: при пустом пароле egg НЕ включит\nRCON и напишет ошибку в консоль. Используйте длинный случайный пароль —\nтот, кто знает его, полностью управляет сервером.",
             "env_variable": "RCON_PASSWORD",
@@ -320,7 +347,7 @@
             ]
         },
         {
-            "sort": 23,
+            "sort": 25,
             "name": "MAP GROUP",
             "description": "Например, mb_bomb",
             "env_variable": "MAP_GROUP",
@@ -333,7 +360,7 @@
             ]
         },
         {
-            "sort": 24,
+            "sort": 26,
             "name": "Name Config File",
             "description": "Конфигурация сервера по умолчанию, например, cs2server.cfg",
             "env_variable": "CFG_FILE",
@@ -346,7 +373,7 @@
             ]
         },
         {
-            "sort": 25,
+            "sort": 27,
             "name": "Config file updater",
             "description": "Обновляем файл конфигурации если нужно",
             "env_variable": "UPDATE_CFG_FILE",
@@ -358,7 +385,7 @@
             ]
         },
         {
-            "sort": 26,
+            "sort": 28,
             "name": "Source AppID",
             "description": "НЕ ВИДИМО ДЛЯ ПОЛЬЗОВАТЕЛЕЙ. НЕ ИЗМЕНЯТЬ.",
             "env_variable": "SRCDS_APPID",
@@ -371,7 +398,7 @@
             ]
         },
         {
-            "sort": 27,
+            "sort": 29,
             "name": "Validate Install",
             "description": "Включает или отключает проверку файлов игрового\nсервера через SteamCMD. Установите значение 0, чтобы\nотключить.",
             "env_variable": "SRCDS_VALIDATE",
@@ -385,7 +412,7 @@
             ]
         },
         {
-            "sort": 28,
+            "sort": 30,
             "name": "Egg - Log Level",
             "description": "Уровень журнала для отображения Egg в консоли и файле\nжурнала.",
             "env_variable": "LOG_LEVEL",
@@ -399,7 +426,7 @@
             ]
         },
         {
-            "sort": 29,
+            "sort": 31,
             "name": "Egg - File Logging",
             "description": "Записывайте сообщения Egg в /egg.log, где они хранятся в\nтечение 48 часов.",
             "env_variable": "LOG_FILE_ENABLED",
@@ -411,7 +438,7 @@
             ]
         },
         {
-            "sort": 30,
+            "sort": 32,
             "name": "Debug",
             "description": "Включить режим отладки. ЕСЛИ ВЫ НЕ ЗНАЕТЕ, ДЛЯ ЧЕГО ЭТО\nНУЖНО, НЕ ВКЛЮЧАЙТЕ!",
             "env_variable": "DEBUG",
@@ -423,7 +450,7 @@
             ]
         },
         {
-            "sort": 31,
+            "sort": 33,
             "name": "TV Enabled",
             "description": "",
             "env_variable": "TV_ENABLED",
@@ -435,7 +462,7 @@
             ]
         },
         {
-            "sort": 32,
+            "sort": 34,
             "name": "TV Name",
             "description": "",
             "env_variable": "TV_NAME",
@@ -448,7 +475,7 @@
             ]
         },
         {
-            "sort": 33,
+            "sort": 35,
             "name": "TV Max Clients",
             "description": "",
             "env_variable": "TV_MAX_CLIENTS",
@@ -461,7 +488,7 @@
             ]
         },
         {
-            "sort": 34,
+            "sort": 36,
             "name": "TV Delay",
             "description": "",
             "env_variable": "TV_DELAY",

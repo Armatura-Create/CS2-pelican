@@ -2,7 +2,8 @@
 # Самопроверка логики аддонов (gameinfo.gi + разбор релизов GitHub).
 # Запуск из корня репозитория:
 #   docker run --rm -v "$PWD/docker:/src" alpine:3 \
-#       sh -c 'apk add -q bash jq && bash /src/scripts/test-addons.sh'
+#       sh -c 'apk add -q bash jq coreutils && bash /src/scripts/test-addons.sh'
+# coreutils обязателен: сравнение версий опирается на GNU sort -V, как в образе.
 set -Eeuo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -90,6 +91,81 @@ check "нет Game_LowViolence -> ненулевой код возврата" "1
 check "файл без якоря не испорчен" "1" "$(grep -c 'GameInfo' "$GAMEINFO_FILE")"
 
 echo
+echo "== refresh_gameinfo: копия в контейнере против файла Valve на хосте =="
+
+GAMEINFO_MNT="$WORK/mnt-gameinfo.gi"
+host_v1() { reset_gameinfo; cp "$GAMEINFO_FILE" "$GAMEINFO_MNT"; rm -f "$GAMEINFO_FILE" "$GAMEINFO_FILE".{host,bak}; }
+
+host_v1
+refresh_gameinfo >/dev/null 2>&1
+check "нет копии -> взята с хоста" "" "$(cmp -s "$GAMEINFO_FILE" "$GAMEINFO_MNT" || echo differ)"
+check "нет копии -> запомнена базовая версия" "" "$(cmp -s "$GAMEINFO_FILE.host" "$GAMEINFO_MNT" || echo differ)"
+
+sync_gameinfo swiftlys2 >/dev/null 2>&1
+printf '// моя правка\n' >> "$GAMEINFO_FILE"
+refresh_gameinfo >/dev/null 2>&1
+check "Valve файл не меняла -> правка пользователя цела" "1" "$(grep -c 'моя правка' "$GAMEINFO_FILE")"
+check "Valve файл не меняла -> строки аддонов целы" "swiftlys2" "$(entries)"
+
+sed -i 's/Game	core/Game	core\n			Game	new_valve_path/' "$GAMEINFO_MNT"
+refresh_gameinfo >/dev/null 2>&1
+check "Valve обновила файл -> в контейнере новая версия" "1" "$(grep -c 'new_valve_path' "$GAMEINFO_FILE")"
+check "Valve обновила файл -> прежний в .bak с правкой" "1" "$(grep -c 'моя правка' "$GAMEINFO_FILE.bak")"
+check "Valve обновила файл -> базовая версия обновлена" "" "$(cmp -s "$GAMEINFO_FILE.host" "$GAMEINFO_MNT" || echo differ)"
+sync_gameinfo swiftlys2 >/dev/null 2>&1
+check "после обновления аддоны расставляются заново" "swiftlys2" "$(entries)"
+
+# сервер старше этой логики: базы нет
+host_v1; cp "$GAMEINFO_MNT" "$GAMEINFO_FILE"; sync_gameinfo swiftlys2 >/dev/null 2>&1
+refresh_gameinfo >/dev/null 2>&1
+check "без базы, копия актуальна -> не тронута" "swiftlys2" "$(entries)"
+check "без базы, копия актуальна -> база запомнена" "" "$(cmp -s "$GAMEINFO_FILE.host" "$GAMEINFO_MNT" || echo differ)"
+
+host_v1; cp "$GAMEINFO_MNT" "$GAMEINFO_FILE"
+sed -i 's/Game	core/Game	core\n			Game	new_valve_path/' "$GAMEINFO_MNT"
+refresh_gameinfo >/dev/null 2>&1
+check "без базы, копия устарела (как на проде) -> обновлена" "1" "$(grep -c 'new_valve_path' "$GAMEINFO_FILE")"
+check "без базы, копия устарела -> прежняя в .bak" "1" "$([ -f "$GAMEINFO_FILE.bak" ] && echo 1)"
+
+echo
+echo "== сравнение версий =="
+
+gt() { if version_gt "$1" "$2"; then echo да; else echo нет; fi; }
+check "beta.10 новее beta.9 (строкой было бы наоборот)" "да"  "$(gt v1.4.11-beta.10 v1.4.11-beta.9)"
+check "бета 1.4.11 новее стабильной 1.4.10"             "да"  "$(gt v1.4.11-beta.1 v1.4.10)"
+check "стабильная 1.4.10 не новее беты 1.4.11"           "нет" "$(gt v1.4.10 v1.4.11-beta.10)"
+check "стабильная 1.4.11 новее своей беты"               "да"  "$(gt v1.4.11 v1.4.11-beta.10)"
+check "одинаковые версии -> не новее"                    "нет" "$(gt v1.4.10 v1.4.10)"
+
+echo
+echo "== выбор релиза Swiftly =="
+
+# как отдаёт GitHub: не по порядку версий, с черновиком и релизом без архива
+cat > "$WORK/list.json" <<'EOF'
+[
+ {"tag_name":"v1.4.11-beta.9","prerelease":true,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v1.4.11-beta.9-with-runtimes.zip"}]},
+ {"tag_name":"v1.4.11-beta.2","prerelease":true,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v1.4.11-beta.2-with-runtimes.zip"}]},
+ {"tag_name":"v1.4.11-beta.10","prerelease":true,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v1.4.11-beta.10-with-runtimes.zip"}]},
+ {"tag_name":"v1.4.12-beta.1","prerelease":true,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-windows-v1.4.12-beta.1-with-runtimes.zip"}]},
+ {"tag_name":"v9.9.9","prerelease":false,"draft":true,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v9.9.9-with-runtimes.zip"}]},
+ {"tag_name":"v1.4.10","prerelease":false,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v1.4.10-with-runtimes.zip"}]},
+ {"tag_name":"v1.4.9","prerelease":false,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v1.4.9-with-runtimes.zip"}]}
+]
+EOF
+SW='swiftlys2-linux-v.*-with-runtimes\.zip'
+check "бета выключена -> последняя стабильная"            "v1.4.10"         "$(pick_release "$WORK/list.json" "$SW" 0 "")"
+check "бета включена -> самая новая бета, не по порядку" "v1.4.11-beta.10" "$(pick_release "$WORK/list.json" "$SW" 1 "")"
+check "архив нужного вида в URL выбранной беты" \
+    "https://x/swiftlys2-linux-v1.4.11-beta.10-with-runtimes.zip" \
+    "$(release_asset_url "$WORK/list.json" "$SW" v1.4.11-beta.10)"
+
+echo '{"tag_name":"v1.4.11-beta.9","prerelease":true,"draft":false,"assets":[{"browser_download_url":"https://x/swiftlys2-linux-v1.4.11-beta.9-with-runtimes.zip"}]}' > "$WORK/pin.json"
+check "фиксация на бете берётся и при выключенной бете" "v1.4.11-beta.9" "$(pick_release "$WORK/pin.json" "$SW" 0 v1.4.11-beta.9)"
+
+check "фиксация: тег проходит"                  "v1.4.10" "$(SWIFTLY_VERSION=v1.4.10 addon_pin swiftly 2>/dev/null)"
+check "фиксация: мусор в URL не пропускается"   ""        "$(SWIFTLY_VERSION='../../evil?x=1' addon_pin swiftly 2>/dev/null)"
+
+echo
 echo "== разбор релиза GitHub =="
 
 cat > "$WORK/ok.json" <<'EOF'
@@ -109,7 +185,7 @@ EOF
 # ответ GitHub при исчерпанном лимите — валидный JSON без tag_name
 echo '{"message":"API rate limit exceeded","documentation_url":"https://docs.github.com"}' > "$WORK/limit.json"
 
-pick() { jq -r --arg re "$2" '[.assets[]?.browser_download_url | select(test($re))] | first // empty' "$1"; }
+pick() { release_asset_url "$1" "$2" "$(jq -r '.tag_name // empty' "$1")"; }
 
 check "Swiftly: выбран linux-with-runtimes" \
     "https://x/swiftlys2-linux-v1.4.9-with-runtimes.zip" \
@@ -123,7 +199,7 @@ check "нет подходящего asset -> пустая строка" \
     "" "$(pick "$WORK/ok.json" 'modsharp.*linux\.zip')"
 
 check "ответ про лимит -> версия не определяется" \
-    "" "$(jq -r '.tag_name // empty' "$WORK/limit.json")"
+    "" "$(pick_release "$WORK/limit.json" '.*\.zip' 0 "")"
 
 check "ответ про лимит -> список assets пуст" \
     "" "$(pick "$WORK/limit.json" '.*\.zip')"

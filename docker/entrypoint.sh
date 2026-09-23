@@ -52,26 +52,9 @@ initialize_server_cfg
 # ============================
 # 3) gameinfo.gi
 # ============================
-# КРИТИЧЕСКИ ВАЖНО: gameinfo.gi НЕ должен быть символьной ссылкой — мы его
-# модифицируем, а /mnt смонтирован только на чтение.
-if [ -L "$GAMEINFO_FILE" ]; then
-    log_message "gameinfo.gi является символьной ссылкой, преобразуем в обычный файл..." "warning"
-    rm -f "$GAMEINFO_FILE"
-fi
-
-if [ ! -f "$GAMEINFO_FILE" ]; then
-    if [ -f "$GAMEINFO_MNT" ]; then
-        log_message "Копируем gameinfo.gi из /mnt..." "running"
-        mkdir -p "$(dirname "$GAMEINFO_FILE")"
-        cp "$GAMEINFO_MNT" "$GAMEINFO_FILE"
-        log_message "gameinfo.gi скопирован" "success"
-    else
-        log_message "КРИТИЧЕСКАЯ ОШИБКА: gameinfo.gi не найден ни в контейнере, ни в /mnt!" "error"
-        log_message "Сервер может не запуститься. Убедитесь что SteamCMD установил игру корректно." "error"
-    fi
-fi
-
-gameinfo_drift_check
+# Своя копия в контейнере (он дописывает туда аддоны, а /mnt только на чтение).
+# Если Valve обновила файл вместе с CS2 — берём новую версию, см. refresh_gameinfo.
+refresh_gameinfo
 
 # ============================
 # 4) Очистка + установка/обновление аддонов

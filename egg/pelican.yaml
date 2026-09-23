@@ -215,6 +215,43 @@ variables:
   rules:
   - boolean
 - sort: 14
+  name: Swiftly - Beta
+  description: |-
+    Ставить бета-версии Swiftly (pre-release на GitHub).
+
+    После обновлений CS2 исправления у Swiftly обычно выходят сначала в
+    бете, а стабильная версия падает вместе с сервером — включите, чтобы
+    сервер поднялся на бете.
+
+    Выключите — и обновления пойдут только до стабильных версий. Уже
+    стоящая бета при этом не откатится: Swiftly обновится, когда выйдет
+    стабильная новее неё.
+  env_variable: SWIFTLY_BETA
+  default_value: 0
+  user_viewable: true
+  user_editable: true
+  rules:
+  - boolean
+- sort: 15
+  name: Swiftly - Version
+  description: |-
+    Зафиксировать версию Swiftly: тег с GitHub, например v1.4.10 или
+    v1.4.11-beta.10. Ставится ровно она — в том числе более старая, для
+    отката, — независимо от автообновления и беты.
+
+    Пусто — версия выбирается автоматически.
+
+    Версии: https://github.com/swiftly-solution/swiftlys2/releases
+  env_variable: SWIFTLY_VERSION
+  default_value: ''
+  user_viewable: true
+  user_editable: true
+  rules:
+  - nullable
+  - string
+  - max:64
+  - regex:/^v?[0-9][0-9A-Za-z.-]*$/
+- sort: 16
   name: Filter - Enabled
   description: |-
     Включить или отключить фильтр консоли, чтобы скрыть
@@ -226,7 +263,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 15
+- sort: 17
   name: Filter - Preview Mode
   description: |-
     Включить или отключить режим предварительного
@@ -240,7 +277,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 16
+- sort: 18
   name: Junk Cleaner - Enabled
   description: |-
     Автоматически очищает логи через 72 часа, файлы демо
@@ -251,7 +288,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 17
+- sort: 19
   name: Custom Parameters
   description: |-
     Пользовательские параметры запуска, которые нужно
@@ -263,7 +300,7 @@ variables:
   rules:
   - string
   - nullable
-- sort: 18
+- sort: 20
   name: Bots Enable
   description: |-
     Включить / отключить ботов на вашем сервере. По
@@ -274,7 +311,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 19
+- sort: 21
   name: Workshop Collections
   description: ID коллекции из Workshop
   env_variable: WORKSHOP_COLLECTIONS_ID
@@ -284,7 +321,7 @@ variables:
   rules:
   - string
   - nullable
-- sort: 20
+- sort: 22
   name: Workshop Map
   description: Запуск карты по ID из Workshop
   env_variable: WORKSHOP_MAP_ID
@@ -294,7 +331,7 @@ variables:
   rules:
   - string
   - nullable
-- sort: 21
+- sort: 23
   name: Using Rcon
   description: |-
     Включить / отключить RCON для использования RCON-команд с
@@ -306,7 +343,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 22
+- sort: 24
   name: Rcon Password
   description: |-
     Пароль для удалённого администрирования сервера.
@@ -321,7 +358,7 @@ variables:
   rules:
   - nullable
   - string
-- sort: 23
+- sort: 25
   name: MAP GROUP
   description: Например, mb_bomb
   env_variable: MAP_GROUP
@@ -331,7 +368,7 @@ variables:
   rules:
   - string
   - nullable
-- sort: 24
+- sort: 26
   name: Name Config File
   description: Конфигурация сервера по умолчанию, например, cs2server.cfg
   env_variable: CFG_FILE
@@ -341,7 +378,7 @@ variables:
   rules:
   - required
   - string
-- sort: 25
+- sort: 27
   name: Config file updater
   description: Обновляем файл конфигурации если нужно
   env_variable: UPDATE_CFG_FILE
@@ -350,7 +387,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 26
+- sort: 28
   name: Source AppID
   description: НЕ ВИДИМО ДЛЯ ПОЛЬЗОВАТЕЛЕЙ. НЕ ИЗМЕНЯТЬ.
   env_variable: SRCDS_APPID
@@ -360,7 +397,7 @@ variables:
   rules:
   - required
   - numeric
-- sort: 27
+- sort: 29
   name: Validate Install
   description: |-
     Включает или отключает проверку файлов игрового
@@ -374,7 +411,7 @@ variables:
   - required
   - integer
   - in:0,1
-- sort: 28
+- sort: 30
   name: Egg - Log Level
   description: |-
     Уровень журнала для отображения Egg в консоли и файле
@@ -387,7 +424,7 @@ variables:
   - required
   - string
   - in:INFO,WARNING,ERROR,DEBUG
-- sort: 29
+- sort: 31
   name: Egg - File Logging
   description: |-
     Записывайте сообщения Egg в /egg.log, где они хранятся в
@@ -398,7 +435,7 @@ variables:
   user_editable: false
   rules:
   - boolean
-- sort: 30
+- sort: 32
   name: Debug
   description: |-
     Включить режим отладки. ЕСЛИ ВЫ НЕ ЗНАЕТЕ, ДЛЯ ЧЕГО ЭТО
@@ -409,7 +446,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 31
+- sort: 33
   name: TV Enabled
   description: ''
   env_variable: TV_ENABLED
@@ -418,7 +455,7 @@ variables:
   user_editable: true
   rules:
   - boolean
-- sort: 32
+- sort: 34
   name: TV Name
   description: ''
   env_variable: TV_NAME
@@ -428,7 +465,7 @@ variables:
   rules:
   - required
   - string
-- sort: 33
+- sort: 35
   name: TV Max Clients
   description: ''
   env_variable: TV_MAX_CLIENTS
@@ -438,7 +475,7 @@ variables:
   rules:
   - required
   - integer
-- sort: 34
+- sort: 36
   name: TV Delay
   description: ''
   env_variable: TV_DELAY
