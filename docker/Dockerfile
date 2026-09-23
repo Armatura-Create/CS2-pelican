@@ -14,12 +14,26 @@ ENV DEBIAN_FRONTEND=noninteractive
 # sudo. Скриптам egg'а sudo не нужен ни на одном шаге.
 RUN rm -f /etc/sudoers.d/flatdeb
 
-# Устанавливаем пакеты
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       iproute2 jq unzip expect rsync bc \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Устанавливаем пакеты.
+#
+# SteamRT3 sniper — это Debian 11 bullseye, поддержка которого закончилась
+# 31.08.2026, и bullseye-security переезжает в archive.debian.org. Во время
+# переезда индекс на deb.debian.org ещё отдаётся, а файлы пакетов уже 404 —
+# сборка падала на apt-get install. Поэтому по порядку:
+#   1) как в образе (deb.debian.org/debian-security);
+#   2) тот же security-репозиторий, но из archive.debian.org — туда он переедет;
+#   3) без security: пакеты из основного bullseye. Хуже по безопасности,
+#      но это последний шанс собрать образ вообще.
+RUN set -e; \
+    PKGS="iproute2 jq unzip expect rsync bc"; \
+    try() { apt-get update && apt-get install -y --no-install-recommends $PKGS; }; \
+    try \
+    || { echo ">>> bullseye-security недоступен на deb.debian.org, пробую archive.debian.org"; \
+         sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|' /etc/apt/sources.list && try; } \
+    || { echo ">>> bullseye-security недоступен нигде, ставлю пакеты из основного bullseye"; \
+         sed -i '/debian-security/d' /etc/apt/sources.list && try; }; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
 # Пользователь container. Базовый образ его НЕ содержит, из-за чего образ
 # невозможно было запустить напрямую (`docker run` падал с "unable to find user
