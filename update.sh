@@ -65,7 +65,11 @@ cs2_update() {
     # серверов. Путь обязан совпадать с CYCLE_LOCK в service/start.sh.
     local cycle_lock="/run/cs2-updater-cycle.lock"
     local busy=""
-    if pgrep -f 'steamcmd' >/dev/null 2>&1; then
+    # -x: по имени процесса, а не по тексту командной строки. С -f проверку
+    # «занимал» любой процесс со словом steamcmd в аргументах — `tail -f
+    # .../steamcmd/...` у админа или даже ssh-команда с grep — и ночное
+    # автообновление отказывалось работать.
+    if pgrep -x steamcmd >/dev/null 2>&1; then
         busy="работает SteamCMD"
     elif [ -e "$cycle_lock" ] && ! flock -n "$cycle_lock" true 2>/dev/null; then
         busy="идёт цикл обновления CS2"
