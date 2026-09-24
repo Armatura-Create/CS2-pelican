@@ -19,6 +19,39 @@ get_game_version() {
     fi
 }
 
+# Steam API объявляет новую версию раньше, чем её сборка появляется в SteamCMD.
+# 25.09.2026: API требовал 1.41.8.4, SteamCMD отвечал «already up to date» —
+# updater оповестил игроков, погасил серверы, ничего не скачал, поднял их и
+# через 5 минут начал всё заново. Поэтому до отсчёта сверяем buildid: тот, что
+# SteamCMD поставит сейчас, и установленный.
+# 0 — сборки совпадают, то есть качать нечего; 1 — есть что качать или не знаем.
+steamcmd_build_is_current() {
+    local base="${BASE_DIR:-/home/cs2_base}/server" appid="${SRCDS_APPID:-730}" branch="public"
+    [[ " ${EXTRA_FLAGS:-} " =~ \ -beta\ ([^ ]+) ]] && branch="${BASH_REMATCH[1]}"
+
+    local local_build remote_build
+    local_build="$(grep -m1 '"buildid"' "$base/steamapps/appmanifest_$appid.acf" 2>/dev/null | tr -cd '0-9' || true)"
+    [ -n "$local_build" ] || return 1
+
+    # Анонимный вход: сведения о приложении публичные, а пароль в аргументах
+    # был бы виден всем в ps.
+    remote_build="$(timeout 120 "$base/steamcmd/steamcmd.sh" +login anonymous \
+            +app_info_update 1 +app_info_print "$appid" +quit 2>/dev/null \
+        | sed -n '/"branches"/,$p' | sed -n "/\"$branch\"/,/}/p" \
+        | grep -m1 '"buildid"' | tr -cd '0-9' || true)"
+    [ -n "$remote_build" ] || return 1
+
+    STEAMCMD_BUILD="$local_build"
+    [ "$remote_build" = "$local_build" ]
+}
+
+# Сколько ждать, пока SteamCMD увидит объявленную версию, прежде чем обновляться
+# по одним данным Steam API. Страховка: если сведения SteamCMD залипнут, игра не
+# должна перестать обновляться совсем.
+STEAMCMD_LAG_MAX=3600
+STEAMCMD_LAG_VERSION=""
+STEAMCMD_LAG_SINCE=0
+
 # 0 — вышло обновление CS2, 1 — обновление не требуется либо проверить не удалось.
 # Вызывать только как условие (`if update_available; then`): тогда bash глушит
 # ERR-трап на неудачных командах внутри.
@@ -65,6 +98,20 @@ update_available() {
             local required_version message
             required_version="$(echo "$response" | jq -r '.response.required_version // "?"')"
             message="$(echo "$response" | jq -r '.response.message // ""')"
+
+            if steamcmd_build_is_current; then
+                local now
+                now="$(date +%s)"
+                if [ "$STEAMCMD_LAG_VERSION" != "$required_version" ]; then
+                    STEAMCMD_LAG_VERSION="$required_version"
+                    STEAMCMD_LAG_SINCE="$now"
+                fi
+                if [ $((now - STEAMCMD_LAG_SINCE)) -lt "$STEAMCMD_LAG_MAX" ]; then
+                    log_message "Steam объявил версию $required_version, но SteamCMD её ещё не видит (сборка $STEAMCMD_BUILD уже стоит). Серверы не трогаем, проверим позже." "warning"
+                    return 1
+                fi
+                log_message "SteamCMD не видит версию $required_version больше часа — обновляем по данным Steam API." "warning"
+            fi
 
             log_message "Доступна новая версия CS2: $required_version (текущая $current_version)" "running"
             [ -n "$message" ] && log_message "Сообщение Steam: $message" "debug"
