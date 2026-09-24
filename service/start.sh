@@ -19,6 +19,27 @@ fi
 source "./utils/managerSteamCMD.sh"
 source "./utils/version.sh"
 
+# Настройки, появившиеся в новых версиях, дописываем в .env со значением по
+# умолчанию — чтобы их было видно и можно было поменять. Именно здесь, а не в
+# update.sh: ночное автообновление выполняет update.sh ПРЕДЫДУЩЕЙ версии (он
+# уже запущен, когда подменяет файлы), и миграция в нём сработала бы только
+# релизом позже. Сбой записи не роняет сервис: работаем со значением по умолчанию.
+ensure_env_setting() {
+    local key="$1" value="$2" comment="$3"
+    if grep -q "^${key}=" .env 2>/dev/null; then
+        return 0
+    fi
+    printf -v "$key" '%s' "$value"
+    if printf '\n# %s\n%s="%s"\n' "$comment" "$key" "$value" 2>/dev/null >> .env; then
+        log_message "В .env добавлена новая настройка: $key=\"$value\"" "info"
+    else
+        log_message "Не удалось дописать $key в .env — работаем со значением по умолчанию ($value)." "warning"
+    fi
+}
+
+ensure_env_setting RESTART_NOTIFY_CMD "$DEFAULT_RESTART_NOTIFY_CMD" \
+    "Команда оповещения о рестарте: sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя"
+
 # 1) Проверка, установлены ли SteamCMD и файлы CS2
 check_initial_install() {
     if [ ! -f "${BASE_DIR:-/home/cs2_base}/server/steamcmd/steamcmd.sh" ] \

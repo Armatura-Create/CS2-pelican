@@ -102,14 +102,26 @@ ls -la /home/cs2_base/server/game/csgo/steam.inf
 
 ### Оповещения игроков (опционально)
 
-О рестарте updater сообщает командой `css_restart_notify <секунды>` — её понимает
-плагин [NotifyMessages](https://github.com/Armatura-Create/NotifyMessages).
-Без плагина обновления работают штатно, просто игроки не увидят предупреждений.
+О рестарте updater сообщает командой плагина
+[NotifyMessages](https://github.com/Armatura-Create/NotifyMessages) — `<команда> <секунды>`.
+Префикс команды зависит от фреймворка на серверах, установщик спрашивает, какую слать:
 
-Проверить связку — из консоли сервера в панели:
+| Фреймворк на серверах | `RESTART_NOTIFY_CMD` в `.env` |
+|---|---|
+| Swiftly | `sw_restart_notify` (по умолчанию) |
+| CounterStrikeSharp | `css_restart_notify` |
+| MetaMod | `mm_restart_notify` |
+| другой | своя команда, одно слово |
+
+Поменять позже — отредактируйте `RESTART_NOTIFY_CMD` в `/opt/cs2-updater/.env` и
+перезапустите сервис. На установках старше v1.2.8 строка появится в `.env` сама
+при первом запуске новой версии, со значением `sw_restart_notify`.
+
+Без плагина обновления работают штатно, просто игроки не увидят предупреждений.
+Проверить связку — из консоли сервера в панели (для Swiftly):
 
 ```
-css_restart_notify 60
+sw_restart_notify 60
 ```
 
 ---

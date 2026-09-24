@@ -83,9 +83,14 @@ update_available() {
     esac
 }
 
+# Команда плагина NotifyMessages зависит от фреймворка на серверах:
+# sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp),
+# mm_restart_notify (MetaMod) или своя. Задаётся RESTART_NOTIFY_CMD в .env.
+DEFAULT_RESTART_NOTIFY_CMD="sw_restart_notify"
+
 # Оповещение о рестарте через плагин NotifyMessages.
 #
-# Плагин НЕ ведёт отсчёт сам: команда css_restart_notify <секунды> рендерит одно
+# Плагин НЕ ведёт отсчёт сам: команда <RESTART_NOTIFY_CMD> <секунды> рендерит одно
 # сообщение для переданного числа. Что показать на конкретной секунде, решает
 # RestartNotify.Thresholds / DefaultMessage в Settings.json плагина — при пустом
 # DefaultMessage лишние секунды не печатаются вовсе.
@@ -109,7 +114,8 @@ inform_players_and_wait() {
     start_time="$(date +%s)"
     end_time=$((start_time + countdown))
 
-    log_message "Оповещаем игроков командой css_restart_notify, отсчёт $countdown сек." "running"
+    local cmd="${RESTART_NOTIFY_CMD:-$DEFAULT_RESTART_NOTIFY_CMD}"
+    log_message "Оповещаем игроков командой $cmd, отсчёт $countdown сек." "running"
 
     local s now target
     for (( s = countdown; s >= 1; s-- )); do
@@ -124,7 +130,7 @@ inform_players_and_wait() {
         local -a pids=()
         while IFS= read -r srv_id; do
             [ -n "$srv_id" ] || continue
-            send_command "$srv_id" "css_restart_notify $s" skip_state_check &
+            send_command "$srv_id" "$cmd $s" skip_state_check &
             pids+=("$!")
         done <<< "$servers"
         [ "${#pids[@]}" -eq 0 ] || wait "${pids[@]}" || true

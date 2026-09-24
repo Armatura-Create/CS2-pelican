@@ -109,8 +109,15 @@ Updater не шлёт `say` и не хранит тексты у себя. Он 
 плагина [NotifyMessages](https://github.com/Armatura-Create/NotifyMessages):
 
 ```
-css_restart_notify <осталось секунд>
+<RESTART_NOTIFY_CMD> <осталось секунд>
 ```
+
+| Фреймворк на серверах | `RESTART_NOTIFY_CMD` в `.env` |
+|---|---|
+| Swiftly | `sw_restart_notify` (по умолчанию) |
+| CounterStrikeSharp | `css_restart_notify` |
+| MetaMod | `mm_restart_notify` |
+| другой | своя команда, одно слово |
 
 Команда отправляется **каждую секунду** от `UPDATE_COUNTDOWN_TIME` до 1 — по одной
 на каждый running-сервер с нужным образом. Пропускать секунды нельзя: плагин
@@ -122,7 +129,7 @@ css_restart_notify <осталось секунд>
 
 | Поле | Что делает |
 |---|---|
-| `Enabled` | включает обработку `css_restart_notify` |
+| `Enabled` | включает обработку команды оповещения |
 | `Thresholds` | точные отсечки: `"60"` → шаблон сообщения |
 | `DefaultMessage` | шаблон для всех остальных секунд; **пустая строка = молчать** |
 | `MessageType` | канал: `Chat`, `Center`, `CenterHtml`, `Console`, `Alert` |

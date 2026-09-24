@@ -129,8 +129,12 @@ Updater не рассылает `say` — он вызывает команду �
 [NotifyMessages](https://github.com/Armatura-Create/NotifyMessages):
 
 ```
-css_restart_notify <осталось секунд>
+<RESTART_NOTIFY_CMD> <осталось секунд>
 ```
+
+Команда зависит от фреймворка: `sw_restart_notify` (Swiftly, по умолчанию),
+`css_restart_notify` (CounterStrikeSharp), `mm_restart_notify` (MetaMod) или своя —
+задаётся при установке, хранится в `.env`.
 
 Команда уходит каждую секунду от `UPDATE_COUNTDOWN_TIME` до 1. Тексты, отсечки,
 цвета и переводы живут в конфиге плагина (`RestartNotify` в `Settings.json`),

@@ -65,7 +65,8 @@ CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэ�
 падение `entrypoint.sh`.
 
 **Оповещения о рестарте делает плагин, не updater.** `inform_players_and_wait`
-шлёт `css_restart_notify <секунды>` каждую секунду от `UPDATE_COUNTDOWN_TIME` до 1;
+шлёт `$RESTART_NOTIFY_CMD <секунды>` (по умолчанию `sw_restart_notify`; у CSS —
+`css_`, у MetaMod — `mm_`) каждую секунду от `UPDATE_COUNTDOWN_TIME` до 1;
 тексты и отсечки живут в конфиге плагина
 [NotifyMessages](https://github.com/Armatura-Create/NotifyMessages). Секунды
 пропускать нельзя — плагин сопоставляет `Thresholds` строгим равенством,
@@ -104,6 +105,11 @@ ERR-трап под `set -Eeuo pipefail` убьёт `start.sh`, systemd пере
 в середину цикла. Путь прописан в двух местах (`start.sh` и `update.sh`),
 меняете — меняйте оба. Самообновление нельзя запускать из-под `cs2.service`:
 `systemctl stop` убивает всю его cgroup вместе с обновляющим процессом.
+
+**Новые настройки `.env` дописывает `start.sh`, а не `update.sh`**
+(`ensure_env_setting`). Ночное автообновление выполняет `update.sh` предыдущей
+версии — он уже запущен, когда подменяет файлы, — так что миграция в нём
+сработала бы только релизом позже.
 
 **Обновление на хосте обязано пережить сбой.** `update.sh` копирует каталог
 в `.backup-<дата>` до подмены и откатывается сам, если сервис не поднялся.

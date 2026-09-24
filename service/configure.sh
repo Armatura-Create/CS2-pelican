@@ -58,6 +58,41 @@ prompt_with_default() {
 }
 
 ########################################
+# Команда оповещения о рестарте
+########################################
+# Зависит от фреймворка на серверах: плагин NotifyMessages регистрирует
+# команду со своим префиксом. К ней updater допишет число секунд.
+prompt_notify_cmd() {
+    echo "Команда оповещения игроков о рестарте (плагин NotifyMessages):"
+    echo "  1) sw_restart_notify   — Swiftly"
+    echo "  2) css_restart_notify  — CounterStrikeSharp"
+    echo "  3) mm_restart_notify   — MetaMod"
+    echo "  4) своя команда"
+
+    local choice
+    while true; do
+        read -rp "Выбор [1]: " choice
+        case "${choice:-1}" in
+            1) RESTART_NOTIFY_CMD="sw_restart_notify";  return 0 ;;
+            2) RESTART_NOTIFY_CMD="css_restart_notify"; return 0 ;;
+            3) RESTART_NOTIFY_CMD="mm_restart_notify";  return 0 ;;
+            4) break ;;
+            *) log_message "Введите число от 1 до 4." "error" ;;
+        esac
+    done
+
+    while true; do
+        read -rp "Команда (число секунд допишется само): " RESTART_NOTIFY_CMD
+        # Одно слово: консоль CS2 считает ';' разделителем команд, а пробел
+        # сдвинул бы число секунд во второй аргумент.
+        if [[ "$RESTART_NOTIFY_CMD" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+            return 0
+        fi
+        log_message "Нужно одно слово из латиницы, цифр и _ . - (например my_restart_notify)." "error"
+    done
+}
+
+########################################
 # Создание файла .env
 ########################################
 create_env_file() {
@@ -80,6 +115,7 @@ PELICAN_NODE_ID="$PELICAN_NODE_ID"
 
 VERSION_CHECK_INTERVAL="$VERSION_CHECK_INTERVAL"
 UPDATE_COUNTDOWN_TIME="$UPDATE_COUNTDOWN_TIME"
+RESTART_NOTIFY_CMD="$RESTART_NOTIFY_CMD"
 
 LOG_LEVEL="$LOG_LEVEL"
 LOG_FILE_ENABLED="$LOG_FILE_ENABLED"
@@ -146,6 +182,8 @@ main() {
     prompt_with_default UPDATE_COUNTDOWN_TIME \
         "Время отсчёта перед рестартом (сек)" \
         "300"
+
+    prompt_notify_cmd
 
     # Параметры логирования
     prompt_with_default LOG_LEVEL \
