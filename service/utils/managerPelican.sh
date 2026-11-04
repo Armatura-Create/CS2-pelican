@@ -42,75 +42,59 @@ pelican_ok() {
     [[ "$PELICAN_CODE" =~ ^2[0-9][0-9]$ ]]
 }
 
+# CS2-серверы ноды: JSON-массив атрибутов из application API (с allocations и
+# переменными окружения) — по ВСЕМ страницам. Общий источник для updater'а и guard.
+# Образ сравниваем без тега: egg предлагает :latest и :dev, и серверы на :dev
+# раньше не гасились перед обновлением, а SteamCMD переписывал /mnt прямо под ними.
+# Без листания страниц (per_page=100) терялись серверы на большой панели.
+# pelican_node_servers [образ] — по умолчанию PELICAN_IMAGE. Результат — в
+# NODE_SERVERS, а не в stdout: вызов внутри $( ) потерял бы PELICAN_CODE для лога.
+# 1 — панель не ответила или ответ не разобран (код — в PELICAN_CODE).
+NODE_SERVERS="[]"
+pelican_node_servers() {
+    local image="${1:-${PELICAN_IMAGE:-}}"
+    if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_APP_TOKEN:-}" ] \
+        || [[ ! "${PELICAN_NODE_ID:-}" =~ ^[0-9]+$ ]] || [ -z "$image" ]; then
+        log_message "Нужны PELICAN_URL, PELICAN_APP_TOKEN, PELICAN_NODE_ID и PELICAN_IMAGE в .env" "error"
+        PELICAN_CODE="000"
+        return 1
+    fi
+
+    local page=1 pages=1 found=""
+    while [ "$page" -le "$pages" ]; do
+        pelican_request GET \
+            "$(pelican_base_url)/api/application/servers?include=allocations&per_page=100&page=$page" \
+            "$PELICAN_APP_TOKEN"
+        pelican_ok || return 1
+        found+="$(printf '%s' "$PELICAN_BODY" | jq -c --arg img "$image" --argjson node "$PELICAN_NODE_ID" '
+            def repo: sub(":[^:/]*$"; "");
+            [.data[].attributes
+             | select(.node == $node and ((.container.image // "") | repo) == ($img | repo))]')" || return 1
+        found+=$'\n'
+        pages="$(printf '%s' "$PELICAN_BODY" | jq -r '.meta.pagination.total_pages // 1' 2>/dev/null || echo 1)"
+        [[ "$pages" =~ ^[0-9]+$ ]] || pages=1
+        page=$((page + 1))
+    done
+    NODE_SERVERS="$(printf '%s' "$found" | jq -cs 'add // []')" || return 1
+}
+
+# Идентификаторы CS2-серверов ноды, по одному на строку.
 get_servers_by_image_app() {
-    local image_filter="${1:-}"
-    if [ -z "$image_filter" ]; then
-        log_message "get_servers_by_image_app: не указан image_filter" "error"
-        return 1
-    fi
-
-    if [ -z "${PELICAN_URL:-}" ] || [ -z "${PELICAN_APP_TOKEN:-}" ]; then
-        log_message "Отсутствуют PELICAN_URL / PELICAN_APP_TOKEN" "error"
-        return 1
-    fi
-
-    if [ -z "${PELICAN_NODE_ID:-}" ]; then
-        log_message "Не задан PELICAN_NODE_ID" "error"
-        return 1
-    fi
-
-    local api_url
-    api_url="$(pelican_base_url)/api/application/servers?per_page=100"
-    pelican_request GET "$api_url" "$PELICAN_APP_TOKEN"
-
-    if ! pelican_ok; then
+    if ! pelican_node_servers "${1:-}"; then
         log_message "Не удалось получить список серверов (application API), HTTP $PELICAN_CODE" "error"
-        log_message "URL: $api_url" "warning"
-        [ -n "$PELICAN_BODY" ] && log_message "Ответ: $PELICAN_BODY" "warning"
         case "$PELICAN_CODE" in
             000) log_message "Панель недоступна с этого хоста (сеть, DNS или таймаут)." "warning" ;;
             404) log_message "404 — проверьте PELICAN_URL в .env (без лишнего пути и / в конце) и ./test-pelican.sh" "warning" ;;
         esac
         return 1
     fi
-
-    local server_ids
-    server_ids="$(echo "$PELICAN_BODY" | jq -r \
-        --arg IMG "$image_filter" \
-        --argjson NODE "$PELICAN_NODE_ID" '
-        .data[]
-        | select(
-            .attributes.container.image == $IMG
-            and .attributes.node == $NODE
-        )
-        | .attributes.identifier
-    ' 2>/dev/null || true)"
-
-    echo "$server_ids"
+    printf '%s' "$NODE_SERVERS" | jq -r '.[].identifier'
 }
 
-# Порты (allocations) всех CS2-серверов ноды, по одному на строку, — для guard.sh.
-# Образ сравниваем без тега: серверы на :dev и :latest одинаково наши.
-# Листаем все страницы: per_page=100 без этого терял серверы на большой панели.
-# 1 — панель не ответила или ответ не разобран: вызывающий оставит прежний список.
+# Порты (allocations) CS2-серверов ноды, по одному на строку, — для guard.sh.
 pelican_node_ports() {
-    [ -n "${PELICAN_URL:-}" ] && [ -n "${PELICAN_APP_TOKEN:-}" ] \
-        && [[ "${PELICAN_NODE_ID:-}" =~ ^[0-9]+$ ]] && [ -n "${PELICAN_IMAGE:-}" ] || return 1
-
-    local page=1 pages=1
-    while [ "$page" -le "$pages" ]; do
-        pelican_request GET \
-            "$(pelican_base_url)/api/application/servers?include=allocations&per_page=100&page=$page" \
-            "$PELICAN_APP_TOKEN"
-        pelican_ok || return 1
-        printf '%s' "$PELICAN_BODY" | jq -r --arg img "$PELICAN_IMAGE" --argjson node "$PELICAN_NODE_ID" '
-            def repo: sub(":[^:/]*$"; "");
-            .data[].attributes
-            | select(.node == $node and ((.container.image // "") | repo) == ($img | repo))
-            | .relationships.allocations.data[]?.attributes.port' || return 1
-        pages="$(printf '%s' "$PELICAN_BODY" | jq -r '.meta.pagination.total_pages // 1' 2>/dev/null || echo 1)"
-        page=$((page + 1))
-    done
+    pelican_node_servers || return 1
+    printf '%s' "$NODE_SERVERS" | jq -r '.[].relationships.allocations.data[]?.attributes.port'
 }
 
 # Печатает состояние сервера: running | starting | stopping | offline,

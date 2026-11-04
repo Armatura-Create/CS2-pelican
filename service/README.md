@@ -62,11 +62,17 @@ curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/
 После установки файлы лежат в:
 
 ```
-$BASE_DIR/server/
-├── steamcmd/
-├── game/csgo/          ← игровые файлы
-└── steamapps/
+$BASE_DIR/
+├── steamcmd/           ← SteamCMD: вне mount, контейнеры его не видят
+└── server/             ← это и монтируется в /mnt
+    ├── game/csgo/      ← игровые файлы
+    └── steamapps/
 ```
+
+До v1.2.12 SteamCMD лежал в `$BASE_DIR/server/steamcmd`, внутри mount: при входе
+с паролем его кэш (`config/config.vdf`) с токеном Steam-аккаунта читал любой
+сервер ноды. Сервис переносит его сам при первом запуске новой версии. Пароль
+Steam передаётся SteamCMD файлом в `/run`, а не аргументом.
 
 ### Pelican API — ключи
 

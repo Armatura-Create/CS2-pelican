@@ -14,6 +14,7 @@
 #   VERSION       какую версию       (по умолчанию latest, например v1.0.0)
 #   REPO          owner/repo
 #   BASE_URL      зеркало вместо GitHub Releases
+#   INSECURE=1    ставить без файла .sha256 (только для локальных тестов)
 #
 # Всё тело в функции, вызов последней строкой: оборванная закачка не выполнит огрызок.
 # `exit` на той же строке, что и вызов, — обязательно: при `curl | bash` оболочка
@@ -78,8 +79,11 @@ cs2_install() {
             ( cd "$tmp" && sha256sum -c --status "$ASSET.sha256" ) \
                 || die "Контрольная сумма не сошлась — архив повреждён или подменён. Ничего не изменено."
             ok "Контрольная сумма совпала."
+        elif [ "${INSECURE:-0}" = "1" ]; then
+            warn "Файла с контрольной суммой нет, а задан INSECURE=1 — ставлю без проверки."
         else
-            warn "Файл с контрольной суммой недоступен, пропускаю проверку."
+            die "Нет файла с контрольной суммой ($url_base/$ASSET.sha256) — без проверки не ставлю.
+       Для локальных тестов через BASE_URL: INSECURE=1"
         fi
 
         mkdir -p "$tmp/new"
@@ -167,12 +171,15 @@ cs2_install() {
     }
 
     # --- уже установлено? ---
-    local dir="${INSTALL_DIR:-}" unit=""
+    # Признак установки — не просто start.sh: у чужого сервиса он тоже бывает
+    local dir="${INSTALL_DIR:-}" unit="" d
     if [ -z "$dir" ]; then
-        unit="$(grep -ls 'ExecStart=.*/start\.sh' /etc/systemd/system/*.service 2>/dev/null | head -n1 || true)"
-        [ -z "$unit" ] || dir="$(grep -oP '^WorkingDirectory=\K.*' "$unit" | head -n1 || true)"
+        while IFS= read -r unit; do
+            d="$(grep -oP '^WorkingDirectory=\K.*' "$unit" | head -n1 || true)"
+            if [ -n "$d" ] && [ -f "$d/start.sh" ] && [ -f "$d/utils/managerPelican.sh" ]; then dir="$d"; break; fi
+        done < <(grep -ls 'ExecStart=.*/start\.sh' /etc/systemd/system/*.service 2>/dev/null || true)
     fi
-    if [ -n "$dir" ] && [ -f "$dir/.env" ]; then
+    if [ -n "$dir" ] && [ -f "$dir/.env" ] && [ -f "$dir/utils/managerPelican.sh" ]; then
         existing_menu "$dir"
         return 0
     fi

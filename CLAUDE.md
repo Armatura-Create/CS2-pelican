@@ -92,6 +92,32 @@ CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэ�
 **Секреты не передаются аргументами процесса.** Аргументы видны всем
 пользователям хоста в `ps` и `/proc/<pid>/cmdline`. Токены Pelican и GitHub
 идут в curl через stdin: `printf 'Authorization: Bearer %s\n' "$t" | curl -H @-`.
+Пароль Steam — файлом `+runscript` с правами 600 в `/run`, который сразу удаляется.
+
+**SteamCMD живёт в `$BASE_DIR/steamcmd`, а не в `$BASE_DIR/server`.** Второй
+смонтирован в `/mnt` каждого контейнера, а SteamCMD кэширует в `config/` токен
+входа в Steam-аккаунт. Установки до v1.2.12 переносит `migrate_steamcmd_dir`.
+Путь — только через `steamcmd_dir`.
+
+**Серверы ноды — только через `pelican_node_servers`**: все страницы API,
+образ без тега (`:latest` и `:dev` — оба наши). Результат — в `NODE_SERVERS`,
+а не в stdout: внутри `$( )` терялся бы `PELICAN_CODE` для лога. Точное
+сравнение образа оставляло серверы на `:dev` работать, пока SteamCMD
+переписывал под ними `/mnt`.
+
+**Без `.sha256` релиз не ставится** — ни `install.sh`, ни `update.sh` (пропуск —
+только `INSECURE=1` для локальных тестов). Установку оба ищут по признаку
+`start.sh` + `utils/managerPelican.sh`, а не по первому юниту с `start.sh`:
+иначе update.sh переписал бы через `rsync --delete` каталог чужого сервиса.
+
+**Цикл обновления CS2 не ждёт SteamCMD бесконечно** (`STEAMCMD_TIMEOUT`,
+по умолчанию 3600 с): серверы в это время выключены. Первая установка — без
+таймаута. Не поднявшийся после обновления сервер получает одну повторную
+попытку старта (`VERIFY_PENDING`).
+
+**Значения в `.env` пишет `env_line`** (`configure.sh`): обычные — `KEY="v"`
+(install.sh читает `BASE_DIR` grep'ом), с `$ \` " \` — через `printf %q`,
+иначе `source .env` от root выполнил бы пароль как код.
 
 **`service/` поставляется релизами, а не клоном.** Тег `vX.Y.Z` запускает
 `.github/workflows/release.yml`: он собирает `cs2-updater.tar.gz` из содержимого
