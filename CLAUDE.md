@@ -68,6 +68,25 @@ CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэ�
 недоступный GitHub или metamodsource — это `warning`/`error` в консоль, а не
 падение `entrypoint.sh`.
 
+**Ввод консоли проходит через entrypoint** (FIFO `/tmp/.cs2-console`, fd 7).
+По `quit`/`exit` в нём ставится `/tmp/.cs2-stop-requested`: CS2 падает с
+segfault/abort на КАЖДОЙ штатной остановке, и только этот признак отличает её
+от падения. FIFO держится открытым на запись (`exec 7<>`): иначе закрытый
+Wings'ом stdin дал бы серверу EOF. stdin отдаётся фоновой задаче явно (`<&6`):
+без перенаправления bash подставил бы ей /dev/null. Код выхода сервера
+печатает `scripts/run-server.sh` служебной строкой `[cs2-exit] N` — unbuffer его
+не передаёт. При падении entrypoint печатает маркер `[cs2-crash] code=N` для хоста
+и выходит с этим кодом. Тест — `tests/test-entrypoint.sh` (поддельный сервер).
+
+**Секреты в консоли маскируются всегда**, не только при `ENABLE_FILTER=1`:
+GSLT и аргументы `rcon_password`/`sv_password`/`sv_setsteamaccount` (сервер
+возвращает эхом набранное в консоли). Маскировка — `mask_secrets` в `filter.sh`,
+без подоболочки на строку.
+
+**Оповещения в Discord — `utils/notify.sh`, и они не имеют права ронять
+вызывающего.** URL вебхука — секрет: curl получает его конфигом через stdin
+(`-K -`), формат проверяется строго (он стоит в конфиге curl в кавычках).
+
 **Оповещения о рестарте делает плагин, не updater.** `inform_players_and_wait`
 шлёт `$RESTART_NOTIFY_CMD <секунды>` (по умолчанию `sw_restart_notify`; у CSS —
 `css_`, у MetaMod — `mm_`) каждую секунду от `UPDATE_COUNTDOWN_TIME` до 1;

@@ -17,6 +17,7 @@ cd "$(dirname "$(readlink -f "$0")")"
 
 source "./utils/logging.sh"
 source "./utils/managerPelican.sh"   # pelican_request: ключ уходит в curl через stdin
+source "./utils/notify.sh"
 trap 'handle_error "$LINENO" "$BASH_COMMAND"' ERR
 
 REPO="${REPO:-Armatura-Create/CS2-pelican}"
@@ -147,6 +148,7 @@ load_current() {
         SELF_AUTOUPDATE=1
     fi
 
+    DISCORD_WEBHOOK="${DISCORD_WEBHOOK:-}"
     GUARD_PPS_LIMIT="${GUARD_PPS_LIMIT:-1500}"
     GUARD_BAN_MINUTES="${GUARD_BAN_MINUTES:-60}"
     GUARD_WHITELIST="${GUARD_WHITELIST:-}"
@@ -657,6 +659,35 @@ step_advanced() {
     fi
 }
 
+# URL вебхука — секрет (по нему кто угодно пишет в канал): ввод скрыт
+step_discord() {
+    say "  Оповещения в Discord: обновление CS2, сервер не поднялся, самообновление."
+    say "  Вебхук: настройки канала → Интеграции → Вебхуки → Новый → Копировать URL."
+    local name
+    while true; do
+        ask_secret DISCORD_WEBHOOK "URL вебхука Discord (Enter — пропустить, - — выключить)"
+        [ "$DISCORD_WEBHOOK" != "-" ] || DISCORD_WEBHOOK=""
+        if [ -z "$DISCORD_WEBHOOK" ]; then
+            ok "Оповещения в Discord выключены."
+            return 0
+        fi
+        if [[ ! "$DISCORD_WEBHOOK" =~ $DISCORD_WEBHOOK_RE ]]; then
+            fail "Это не URL вебхука: нужен https://discord.com/api/webhooks/<id>/<токен>."
+            DISCORD_WEBHOOK=""
+            continue
+        fi
+        if name="$(notify_check)"; then
+            ok "Вебхук работает: «$name»."
+            if ask_yn "Отправить тестовое сообщение?" n; then
+                notify info "CS2 Updater: проверка оповещений" "Если вы это видите — оповещения с $(hostname) работают."
+            fi
+        else
+            warn "Discord не подтвердил вебхук — проверьте URL. Сохраню как есть."
+        fi
+        return 0
+    done
+}
+
 step_service() {
     step "Сервис"
     local unit
@@ -693,6 +724,8 @@ step_service() {
         GUARD_ON=0
     fi
 
+    step_discord
+
     if ask_yn "Изменить дополнительные настройки (Steam-аккаунт, AppID, интервал проверки, логи)?" n; then
         step_advanced
     fi
@@ -717,6 +750,7 @@ summary() {
     row "Проверка обновлений CS2" "каждые $VERSION_CHECK_INTERVAL с"
     row "Логи" "$LOG_LEVEL$([ "$LOG_FILE_ENABLED" = 1 ] && echo ', в journald и logs/' || echo ', только journald')"
     row "Автообновление сервиса" "$([ "$SELF_AUTOUPDATE" = 1 ] && echo 'да, каждую ночь' || echo 'нет')"
+    row "Discord" "$([ -n "$DISCORD_WEBHOOK" ] && mask "$DISCORD_WEBHOOK" || echo 'выключен')"
     row "Защита от флуда" "$([ "$GUARD_ON" = 1 ] && echo "да, больше $GUARD_PPS_LIMIT пакетов/с — блок на $GUARD_BAN_MINUTES мин" || echo 'нет')"
 }
 
@@ -759,6 +793,9 @@ write_env() {
         echo
         env_line LOG_LEVEL "$LOG_LEVEL"
         env_line LOG_FILE_ENABLED "$LOG_FILE_ENABLED"
+        echo
+        echo "# Оповещения в Discord: URL вебхука канала, пусто — выключено"
+        env_line DISCORD_WEBHOOK "$DISCORD_WEBHOOK"
         echo
         echo "# Защита от флуда (guard.sh): пакетов/с с одного адреса, минут блокировки,"
         echo "# адреса и подсети без ограничений через запятую (например, прокси-защита)"

@@ -49,27 +49,42 @@ EOL
     log_message "Фильтр сообщений активирован. Загрузлено $pattern_count шаблон(ов)." "running"
 }
 
+# Команды с секретом в аргументе. Сервер возвращает эхом всё, что набрано в
+# консоли, и `rcon_password X` из панели уходил бы в вывод — а с ним в логи
+# Docker и в отчёты о падениях на хосте. Значение — строка в кавычках или одно
+# слово; `= ` между ними (так печатается значение квара) тоже учитываем.
+SECRET_CMD_RE='^(.*(rcon_password|sv_password|sv_setsteamaccount|sv_downloadurl_password)"?[[:space:]]*=?[[:space:]]*)("[^"]*"|[^[:space:]"]+)(.*)$'
+
+# Маскирует секреты в строке: GSLT буквальной подстановкой (раньше токен шёл в
+# sed -E, и спецсимвол в значении ломал выражение) и аргументы секретных
+# команд. Результат — в MASKED_LINE: без подоболочки на каждую строку.
+mask_secrets() {
+    MASKED_LINE="$1"
+    if [ -n "${STEAM_ACC:-}" ]; then
+        MASKED_LINE="${MASKED_LINE//"$STEAM_ACC"/********}"
+    fi
+    # дешёвая проверка до регулярного выражения: у всех команд есть эти куски
+    if [[ "$MASKED_LINE" == *_password* || "$MASKED_LINE" == *setsteamaccount* ]] \
+        && [[ "$MASKED_LINE" =~ $SECRET_CMD_RE ]]; then
+        MASKED_LINE="${BASH_REMATCH[1]}********${BASH_REMATCH[4]}"
+    fi
+}
+
 handle_server_output() {
     local line="$1"
-    [[ -z "$line" ]] && { printf '%s\n' "$line"; return; }
+    [[ -z "$line" ]] && { printf '\n'; return; }
 
-    # Если фильтр отключён, просто выводим
+    # Секреты маскируются ВСЕГДА. Раньше — только при включённом фильтре.
+    mask_secrets "$line"
+
     if [ "${ENABLE_FILTER:-0}" != "1" ]; then
-        printf '%s\n' "$line"
+        printf '%s\n' "$MASKED_LINE"
         return
     fi
 
     local blocked=false
-    local modified_line="$line"
 
-    # Маскируем GSLT буквальной подстановкой. Раньше токен клался в
-    # REGEX_PATTERNS и подставлялся через sed -E "s/$regex/.../" — спецсимвол
-    # в значении ломал sed или менял смысл выражения.
-    if [ -n "${STEAM_ACC:-}" ]; then
-        modified_line="${modified_line//"$STEAM_ACC"/********}"
-    fi
-
-    # 1) Exact matchЫ
+    # 1) Exact match
     for exact_pattern in "${!EXACT_PATTERNS[@]}"; do
         if [[ "$line" == "$exact_pattern" ]]; then
             blocked=true
@@ -91,10 +106,10 @@ handle_server_output() {
     if [ "$blocked" = true ]; then
         if [ "${FILTER_PREVIEW_MODE:-0}" = "1" ]; then
             # В режиме превью показываем строку, чтобы можно было проверить фильтр
-            log_message "Заблокированная строка (PREVIEW): $modified_line" "warning"
+            log_message "Заблокированная строка (PREVIEW): $MASKED_LINE" "warning"
         fi
         # В консоль не выводим
     else
-        printf '%s\n' "$modified_line"
+        printf '%s\n' "$MASKED_LINE"
     fi
 }

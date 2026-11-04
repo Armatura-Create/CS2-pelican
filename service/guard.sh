@@ -206,7 +206,10 @@ status() {
     nft list chain $TABLE game | grep -E 'counter packets [1-9]' || echo "  пока ничего"
     echo
     echo "Последние блокировки:"
-    journalctl -k --no-pager -o short --grep 'cs2guard flood' -n 10 2>/dev/null || echo "  нет записей"
+    # -q: без «-- No entries --» от самого journalctl; пусто — пишем своё
+    local recent
+    recent="$(journalctl -k -q --no-pager -o short --grep 'cs2guard flood' -n 10 2>/dev/null || true)"
+    printf '%s\n' "${recent:-  нет записей}"
 }
 
 on() {
