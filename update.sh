@@ -110,14 +110,47 @@ cs2_update() {
     fi
     command -v rsync >/dev/null 2>&1 || die "Нужен rsync: sudo apt-get install -y rsync"
 
+    # «latest» превращаем в конкретный тег ОДИН раз. Архив и .sha256 по двум
+    # отдельным адресам .../releases/latest/download/ сразу после выхода релиза
+    # приходили от РАЗНЫХ версий (GitHub ещё отдавал прежний «latest» на один из
+    # них), и сумма не сходилась.
+    resolve_latest() {
+        local u
+        u="$(curl -fsSIL -o /dev/null -w '%{url_effective}' --retry 3 --connect-timeout 15 \
+            "https://github.com/$REPO/releases/latest" 2>/dev/null || true)"
+        u="${u##*/}"
+        [[ "$u" =~ ^v[0-9][0-9A-Za-z.-]*$ ]] && printf '%s' "$u"
+    }
+
+    # Управляющие символы вырезаем (чужой ответ не должен рисовать по терминалу),
+    # кириллицу оставляем: заглушки провайдеров обычно на русском.
+    # Почему сумма не сошлась: две разные версии, оборванная закачка или вместо
+    # файла пришла чужая страница (прокси, заглушка провайдера вместо GitHub)
+    explain_checksum() {
+        local want got
+        want="$(head -c 300 "$tmp/$ASSET.sha256" | LC_ALL=C tr -d '\000-\011\013-\037\177' | head -n1)"
+        got="$(sha256sum "$tmp/$ASSET" | cut -d' ' -f1)"
+        warn "  ожидалась: ${want%% *}"
+        warn "  получена:  $got ($(stat -c %s "$tmp/$ASSET") байт)"
+        if [[ ! "${want%% *}" =~ ^[0-9a-f]{64}$ ]]; then
+            warn "  Вместо файла суммы пришло: «${want:0:100}»"
+            warn "  Похоже на заглушку прокси или блокировку GitHub по пути к этому серверу."
+        elif ! gzip -t "$tmp/$ASSET" 2>/dev/null; then
+            warn "  Архив — не gzip: закачку подменили или оборвали по пути. Начало файла:"
+            warn "  «$(head -c 100 "$tmp/$ASSET" | LC_ALL=C tr -d '\000-\037\177')»"
+        else
+            warn "  Версия внутри архива: $(tar -xOzf "$tmp/$ASSET" --wildcards '*/VERSION' 2>/dev/null || echo '?')"
+        fi
+    }
+
     # BASE_URL позволяет подставить зеркало или локальный каталог (используется в тестах)
     local url_base="${BASE_URL:-}"
     if [ -z "$url_base" ]; then
         if [ "$VERSION" = "latest" ]; then
-            url_base="https://github.com/$REPO/releases/latest/download"
-        else
-            url_base="https://github.com/$REPO/releases/download/$VERSION"
+            VERSION="$(resolve_latest)" || die "Не удалось узнать последнюю версию на GitHub — сервис не тронут.
+       Укажите версию явно: curl ... | sudo VERSION=v1.2.12 bash"
         fi
+        url_base="https://github.com/$REPO/releases/download/$VERSION"
     fi
 
     local tmp; tmp="$(mktemp -d)"
@@ -131,8 +164,11 @@ cs2_update() {
         || die "Не удалось скачать $url_base/$ASSET — сервис не тронут."
 
     if curl -fsSL --retry 3 -o "$tmp/$ASSET.sha256" "$url_base/$ASSET.sha256" 2>/dev/null; then
-        ( cd "$tmp" && sha256sum -c --status "$ASSET.sha256" ) \
-            || die "Контрольная сумма не сошлась — обновление отменено, сервис не тронут."
+        if ! ( cd "$tmp" && sha256sum -c --status "$ASSET.sha256" ); then
+            warn "Контрольная сумма не сошлась ($url_base):"
+            explain_checksum
+            die "Обновление отменено, сервис не тронут."
+        fi
         ok "Контрольная сумма совпала."
     elif [ "${INSECURE:-0}" = "1" ]; then
         warn "Файла с контрольной суммой нет, а задан INSECURE=1 — обновляю без проверки."

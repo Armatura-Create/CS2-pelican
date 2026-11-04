@@ -137,8 +137,16 @@ BASE_URL=file:///tmp/rel bash /src/update.sh >/dev/null 2>&1 || true
 [ "$(cat /opt/cs2-updater/VERSION)" = v9.9.9 ] && pass "с верной sha256 — обновляет" || fail "с sha256 не обновил"
 sed -i 's/^./0/' /tmp/rel/cs2-updater.tar.gz.sha256   # портим сумму
 echo v1.0.0 > /opt/cs2-updater/VERSION
-BASE_URL=file:///tmp/rel bash /src/update.sh >/dev/null 2>&1 || true
+out="$(BASE_URL=file:///tmp/rel bash /src/update.sh 2>&1 || true)"
 [ "$(cat /opt/cs2-updater/VERSION)" = v1.0.0 ] && pass "неверная sha256 — отказ" || fail "неверная sha256 пропущена"
+grep -q 'ожидалась' <<<"$out" && grep -q 'Версия внутри архива: v9.9.9' <<<"$out" \
+    && pass "отказ объясняет: обе суммы и версия архива" || fail "нет объяснения: $(tail -n 4 <<<"$out")"
+
+# Провайдер или прокси вместо файла с GitHub отдаёт свою страницу
+echo '<html><body>Доступ к ресурсу ограничен</body></html>' > /tmp/rel/cs2-updater.tar.gz.sha256
+out="$(BASE_URL=file:///tmp/rel bash /src/update.sh 2>&1 || true)"
+grep -q 'заглушку прокси' <<<"$out" && grep -q 'Доступ к ресурсу ограничен' <<<"$out" \
+    && pass "заглушка вместо .sha256 распознана" || fail "заглушка: $(tail -n 4 <<<"$out")"
 
 echo
 [ "$FAIL" -eq 0 ] && echo "service: всё в порядке" || { echo "service: провалов — $FAIL"; exit 1; }
