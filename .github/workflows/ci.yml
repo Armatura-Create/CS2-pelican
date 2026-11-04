@@ -84,3 +84,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: docker build
         run: docker build -t cs2-basefiles:ci docker/
+      # entrypoint на собранном образе: остановка ≠ падение, маскировка секретов,
+      # консоль не закрывается, подсказка про GSLT
+      - name: entrypoint
+        run: IMAGE=cs2-basefiles:ci bash tests/test-entrypoint.sh

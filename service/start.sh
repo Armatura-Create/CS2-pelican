@@ -18,6 +18,7 @@ fi
 
 source "./utils/managerSteamCMD.sh"
 source "./utils/version.sh"
+source "./utils/notify.sh"
 
 # Настройки, появившиеся в новых версиях, дописываем в .env со значением по
 # умолчанию — чтобы их было видно и можно было поменять. Именно здесь, а не в
@@ -39,6 +40,8 @@ ensure_env_setting() {
 
 ensure_env_setting RESTART_NOTIFY_CMD "$DEFAULT_RESTART_NOTIFY_CMD" \
     "Команда оповещения о рестарте: sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя"
+ensure_env_setting DISCORD_WEBHOOK "" \
+    "Оповещения в Discord (обновление CS2, сервер не поднялся, самообновление): URL вебхука канала, пусто — выключено"
 ensure_env_setting STEAMCMD_TIMEOUT "3600" \
     "Сколько секунд ждать SteamCMD при обновлении CS2, пока серверы выключены; потом поднимаем их как есть"
 # Защиту от флуда (guard.sh) включаем сами — один раз, при первом запуске
@@ -91,6 +94,8 @@ run_update_cycle() {
     fi
 
     local cd_time="${UPDATE_COUNTDOWN_TIME:-300}"
+    notify info "Обновление CS2 до ${CS2_NEW_VERSION:-новой версии}" \
+        "Серверы ноды перезапустятся через $cd_time сек. Пока SteamCMD качает обновление, они выключены."
     log_message "Оповещаем игроков и ждём $cd_time сек. перед перезапуском..." "running"
     inform_players_and_wait "$cd_time" || true
 
@@ -103,8 +108,12 @@ run_update_cycle() {
     # КРИТИЧНО: что бы ни случилось со SteamCMD, остановленные серверы обязаны
     # вернуться. Раньше падение install_or_update убивало сервис и оставляло
     # все игровые серверы выключенными, а зависший SteamCMD держал их так часами.
-    if ! install_or_update "${STEAMCMD_TIMEOUT:-3600}"; then
+    local sc_rc=0
+    install_or_update "${STEAMCMD_TIMEOUT:-3600}" || sc_rc=$?
+    if [ "$sc_rc" -ne 0 ]; then
         log_message "Обновление CS2 не удалось. Поднимаем серверы на старой версии." "error"
+        notify error "CS2 не обновилась" \
+            "SteamCMD завершился с кодом $sc_rc$([ "$sc_rc" -eq 124 ] && echo ' (не уложился в STEAMCMD_TIMEOUT)'). Серверы поднимаются на старой версии. Журнал: journalctl -u cs2-updater -n 100"
     fi
 
     log_message "Запускаем обратно остановленные сервера..." "running"
@@ -116,8 +125,13 @@ run_update_cycle() {
         local retry_list="$VERIFY_PENDING"
         log_message "Пробую запустить ещё раз: $(printf '%s' "$retry_list" | paste -sd' ' -)" "warning"
         start_servers_with_delay "$retry_list" || true
-        verify_servers_started "$retry_list" 120 || true
+        if ! verify_servers_started "$retry_list" 120; then
+            notify error "Серверы не поднялись после обновления CS2" \
+                "$(printf '%s' "$VERIFY_PENDING" | paste -sd' ' -) — даже со второй попытки. Частая причина — аддон несовместим с новой CS2: смотрите консоль сервера в панели."
+        fi
     fi
+    [ "$sc_rc" -ne 0 ] || notify ok "CS2 обновлена до ${CS2_NEW_VERSION:-новой версии}" \
+        "Серверов перезапущено: $(printf '%s' "$running_list" | grep -c . || true)."
 
     [ -z "$lock_fd" ] || exec {lock_fd}>&-
     log_message "Цикл обновления CS2 завершён." "info"

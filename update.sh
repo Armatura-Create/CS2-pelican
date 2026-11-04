@@ -308,18 +308,32 @@ cs2_update() {
         warn "Сервис поднимаю: файлы игры обновит, серверы гасить не сможет."
     fi
 
+    # Оповещение в Discord через установленный notify.sh. Отдельным bash от root:
+    # .env с вебхуком доступен только root, а update.sh могли запустить через sudo.
+    # Любой сбой оповещения обновлению не мешает.
+    notify_installed() {
+        [ -f "$dir/utils/notify.sh" ] || return 0
+        # shellcheck disable=SC2016
+        $SUDO bash -c 'cd "$1" && source ./utils/logging.sh && source ./.env && source ./utils/notify.sh && shift && notify "$@"' \
+            _ "$dir" "$@" >/dev/null 2>&1 || true
+    }
+
     # --- запуск ---
     if [ "$was_active" -eq 1 ]; then
         info "Запускаем сервис..."
         start_service
         if service_healthy; then
             ok "Сервис $svc работает."
+            notify_installed ok "CS2 Updater обновлён: $cur → $new" "Сервис $svc работает."
             prune_backups
         else
             warn "Сервис не поднялся на новой версии, откатываю на $cur..."
             # Журнал снимаем ДО отката: после него последние строки будут уже
             # от перезапуска старой версии и спрячут настоящую причину сбоя.
             $SUDO journalctl -u "$svc" -n 30 --no-pager >&2
+            # До отката: в старой версии notify.sh может не быть
+            notify_installed error "CS2 Updater: $new не поднялся, откат на $cur" \
+                "Сервис $svc падал на новой версии. Журнал: journalctl -u $svc -n 50"
             $SUDO systemctl stop "$svc" 2>/dev/null || true
             rollback
             die "Обновление прервано, см. сообщения выше."

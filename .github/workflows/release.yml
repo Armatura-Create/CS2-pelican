@@ -70,6 +70,8 @@ jobs:
           test -x check/update.sh
           test -x check/autoupdate.sh
           test -x check/guard.sh
+          test -x check/doctor.sh
+          test -f check/utils/notify.sh
           test -f check/utils/logging.sh
           test -f check/VERSION
           test ! -e check/.env

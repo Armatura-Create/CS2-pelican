@@ -60,6 +60,7 @@ SH
     [ "$rc" -eq 124 ] && pass "зависший SteamCMD остановлен по таймауту" || fail "таймаут: код $rc"
     rc=0; EXIT=8 install_or_update >/dev/null 2>&1 || rc=$?
     [ "$rc" -eq 8 ] && pass "код ошибки SteamCMD не теряется" || fail "код ошибки: $rc"
+    [ "$FAIL" -eq 0 ]   # провалы подоболочки — в общий счёт
 ) || fail "блок SteamCMD упал"
 
 echo "== панель: серверы ноды по всем страницам"
@@ -97,6 +98,7 @@ sleep 1
     PELICAN_URL=http://127.0.0.1:8999
     get_servers_by_image_app "$PELICAN_IMAGE" >/dev/null 2>/tmp/err && fail "недоступная панель — успех?" \
         || { grep -q 'HTTP 000' /tmp/err && pass "недоступная панель: ошибка с кодом в логе" || fail "лог: $(cat /tmp/err)"; }
+    [ "$FAIL" -eq 0 ]   # провалы подоболочки — в общий счёт
 ) || fail "блок панели упал"
 
 echo "== verify_servers_started: список для повторного старта"
@@ -110,7 +112,26 @@ echo "== verify_servers_started: список для повторного ста
     verify_servers_started $'ok1\nbad1\nbad2' 1 >/dev/null 2>&1 && fail "провал не замечен" || true
     [ "$VERIFY_PENDING" = $'bad1\nbad2\n' ] && pass "не поднявшиеся — в VERIFY_PENDING" \
         || fail "VERIFY_PENDING='$VERIFY_PENDING'"
+    [ "$FAIL" -eq 0 ]   # провалы подоболочки — в общий счёт
 ) || fail "блок verify упал"
+
+echo "== doctor.sh"
+(
+    cd "$work"
+    printf 'PELICAN_URL="http://127.0.0.1:8000"\nPELICAN_APP_TOKEN="papp_x"\nPELICAN_API_TOKEN="pacc_x"\nPELICAN_NODE_ID="1"\nPELICAN_IMAGE="docker.io/scrender/base-files-cs2:latest"\nBASE_DIR="/srv/cs2"\nLOG_FILE_ENABLED="0"\n' > .env
+    chmod 600 .env
+    chown -R root:root . && touch stray && chown 1001:1001 stray
+    # systemd в контейнере нет: заглушка «ничего не запущено»
+    mkdir -p /tmp/stub && printf '#!/bin/sh\nexit 1\n' > /tmp/stub/systemctl && chmod +x /tmp/stub/systemctl
+    rc=0; out="$(PATH="/tmp/stub:$PATH" ./doctor.sh 2>&1)" || rc=$?
+    out="$(sed 's/\x1b\[[0-9;]*m//g' <<<"$out")"
+    grep -q 'CS2-серверов на ноде: 2' <<<"$out" && pass "doctor видит серверы ноды" || fail "doctor: $(grep -i 'панель\|ключ' <<<"$out")"
+    grep -q 'Файлы не root.*stray' <<<"$out" && pass "doctor находит файлы не root" || fail "doctor не нашёл чужой файл"
+    grep -q 'unbound variable\|command not found' <<<"$out" && fail "doctor упал: $(grep -m1 'unbound\|not found' <<<"$out")" || pass "doctor прошёл все разделы"
+    [ "$rc" -eq 1 ] && pass "doctor: код 1 при проблемах" || fail "doctor: код $rc"
+    rm -f stray
+    [ "$FAIL" -eq 0 ]   # провалы подоболочки — в общий счёт
+) || fail "блок doctor упал"
 
 echo "== update.sh: своя установка, а не чужой start.sh; без sha256 не ставит"
 mkdir -p /etc/systemd/system /opt/aaa-other /opt/cs2-updater /tmp/rel /tmp/dist/cs2-updater

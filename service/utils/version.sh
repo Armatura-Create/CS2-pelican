@@ -49,6 +49,8 @@ steamcmd_build_is_current() {
 # по одним данным Steam API. Страховка: если сведения SteamCMD залипнут, игра не
 # должна перестать обновляться совсем.
 STEAMCMD_LAG_MAX=3600
+# Версия, которую объявил Steam, — для оповещений
+CS2_NEW_VERSION=""
 STEAMCMD_LAG_VERSION=""
 STEAMCMD_LAG_SINCE=0
 
@@ -113,6 +115,7 @@ update_available() {
                 log_message "SteamCMD не видит версию $required_version больше часа — обновляем по данным Steam API." "warning"
             fi
 
+            CS2_NEW_VERSION="$required_version"
             log_message "Доступна новая версия CS2: $required_version (текущая $current_version)" "running"
             [ -n "$message" ] && log_message "Сообщение Steam: $message" "debug"
             return 0
