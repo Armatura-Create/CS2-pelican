@@ -70,7 +70,7 @@ ports="$(nft -j list set inet cs2guard ports | jq -r '.nftables[].set.elem[]?' |
     || fail "порты: ждали '27015 27016 27020', получили '$ports'"
 
 # Публичные адреса тестовой сети на lo: свой же трафик проходит prerouting
-for i in 7 8 9 10 11 12; do ip addr add "198.51.100.$i/32" dev lo; done
+for i in 7 8 9 10 11 12 13; do ip addr add "198.51.100.$i/32" dev lo; done
 
 # send <откуда> <порт> <пакетов> <байт> [пауза_с] [префикс]
 send() {
@@ -113,6 +113,40 @@ counter() { nft list chain inet cs2guard game | grep -F "$1" | grep -o 'counter 
 tiny="$(counter 'udp length < 17')"; a2s="$(counter '@a2s4')"
 [ "${tiny:-0}" -eq 5 ] && pass "крошечные пакеты отброшены ($tiny из 5)" || fail "крошечные: отброшено ${tiny:-0} из 5"
 [ "${a2s:-0}" -ge 100 ] && pass "лишние A2S отброшены ($a2s из 200)" || fail "A2S сверх лимита: отброшено ${a2s:-0}"
+
+echo "== TCP: перебор RCON (поток SYN) — бан"
+python3 - <<'PY2'
+import socket
+for _ in range(40):
+    s = socket.socket(); s.settimeout(0.05); s.bind(("198.51.100.13", 0))
+    try: s.connect(("198.51.100.13", 27015))
+    except Exception: pass
+    s.close()
+PY2
+blocked 198.51.100.13 && pass "поток SYN на игровой порт заблокирован" || fail "SYN-флуд не заблокирован"
+
+echo "== бан только на портах одного сервера (для правил по консоли)"
+./guard.sh ban-port 198.51.100.8 5 27016
+nft list set inet cs2guard blockport4 | grep -q '198.51.100.8 . 27016' && pass "ban-port: адрес . порт" || fail "ban-port не добавил"
+before="$(counter 'udp dport @blockport4')"
+send 198.51.100.8 27016 3 100
+send 198.51.100.8 27015 3 100
+after="$(counter 'udp dport @blockport4')"
+[ "$((after - ${before:-0}))" -eq 3 ] && pass "отброшено только на своём порту (3 из 6)" || fail "blockport отбросил $((after - ${before:-0})) из 6"
+./guard.sh ban-port 10.0.0.9 5 27016 >/dev/null 2>&1 && fail "ban-port принял частный адрес" || pass "ban-port отклоняет частный адрес"
+
+echo "== block / why / rates"
+./guard.sh block 192.168.1.5 >/dev/null 2>&1 && fail "block принял частный адрес" || pass "block отклоняет частный адрес"
+./guard.sh block 198.51.100.10 30 && blocked 198.51.100.10 && pass "ручной block" || fail "ручной block"
+# вывод — в переменную: `| grep -q` под pipefail роняет конвейер SIGPIPE'ом
+w="$(./guard.sh why 198.51.100.8 2>&1 || true)"
+grep -q 'на портах: 27016' <<<"$w" && pass "why показывает бан по порту" || fail "why: $w"
+# ждём только своего отправителя: голый wait ждал бы и фальшивую панель — вечно
+( sleep 1; send 198.51.100.11 27020 400 100 0.004 ) & sender=$!
+r="$(./guard.sh rates 3)"; wait "$sender"
+grep -q '198.51.100.11' <<<"$r" && pass "rates видит отправителя ($(grep 198.51.100.11 <<<"$r" | awk '{print $2}') пакетов/с)" || fail "rates: $r"
+./guard.sh unblock 198.51.100.8 && ! nft list set inet cs2guard blockport4 | grep -q '198.51.100.8' \
+    && pass "unblock снимает и баны по портам" || fail "бан по порту остался"
 
 echo "== повторный apply без изменений не пересобирает таблицу (блокировки целы)"
 ./guard.sh apply

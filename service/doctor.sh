@@ -109,6 +109,16 @@ else
     warn "Выключена: sudo $DIR/guard.sh on"
 fi
 
+section "Наблюдение за консолью"
+if systemctl is-active --quiet cs2-watch 2>/dev/null; then
+    ok "Работает (защита по консоли: ${GUARD_CONSOLE:-log}, журналы — ${CONSOLE_LOG_DAYS:-14} дн.)"
+    recent="$(find /var/lib/cs2-updater/crashes -name '*.log' -mmin -1440 2>/dev/null | wc -l)"
+    [ "$recent" -eq 0 ] || warn "Падений серверов за сутки: $recent — sudo $DIR/watch.sh status"
+    [ -d /var/lib/cs2-updater ] && ok "Журналы и отчёты занимают $(du -sh /var/lib/cs2-updater 2>/dev/null | cut -f1)"
+else
+    warn "Выключено: sudo $DIR/watch.sh on"
+fi
+
 section "Discord"
 if [ -z "${DISCORD_WEBHOOK:-}" ]; then
     warn "Оповещения выключены (DISCORD_WEBHOOK в .env пуст)"

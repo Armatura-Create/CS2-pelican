@@ -152,7 +152,8 @@ cs2_install() {
         base="$(grep -oP '^BASE_DIR="\K[^"]+' "$d/.env" 2>/dev/null || true)"
 
         echo >&2
-        warn "Будет удалено: сервис ${svc:-?}.service, таймер автообновления, защита от флуда, $d и его бэкапы."
+        warn "Будет удалено: сервис ${svc:-?}.service, таймер автообновления, защита от флуда, наблюдение за консолью, $d и его бэкапы.
+       Журналы консоли и отчёты о падениях в /var/lib/cs2-updater остаются."
         [ -z "$base" ] || info "Файлы игры ($base) — спрошу отдельно, по умолчанию останутся."
         read -rp "  Для подтверждения введите «удалить»: " answer || answer=""
         if [ "$answer" != "удалить" ]; then
@@ -167,6 +168,7 @@ cs2_install() {
         fi
         # Снимает правила nftables и свой таймер — до удаления каталога со скриптом
         [ ! -x "$d/guard.sh" ] || "$d/guard.sh" off >/dev/null 2>&1 || true
+        [ ! -x "$d/watch.sh" ] || "$d/watch.sh" off >/dev/null 2>&1 || true
         systemctl disable --now cs2-updater-autoupdate.timer >/dev/null 2>&1 || true
         rm -f /etc/systemd/system/cs2-updater-autoupdate.service /etc/systemd/system/cs2-updater-autoupdate.timer
         systemctl daemon-reload

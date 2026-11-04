@@ -25,6 +25,7 @@ EGG_NAME="CS2 with base files"
 DEFAULT_IMAGE="docker.io/scrender/base-files-cs2:latest"
 AUTOUPDATE_TIMER="cs2-updater-autoupdate.timer"
 GUARD_TIMER="cs2-guard.timer"
+WATCH_UNIT="cs2-watch.service"
 # Путь обязан совпадать с CYCLE_LOCK в start.sh
 CYCLE_LOCK="/run/cs2-updater-cycle.lock"
 
@@ -156,6 +157,14 @@ load_current() {
         GUARD_ON=0
     else
         GUARD_ON=1
+    fi
+
+    CONSOLE_LOG_DAYS="${CONSOLE_LOG_DAYS:-14}"
+    GUARD_CONSOLE="${GUARD_CONSOLE:-log}"
+    if [ "$RECONFIGURE" -eq 1 ] && ! systemctl is-enabled --quiet "$WATCH_UNIT" 2>/dev/null; then
+        WATCH_ON=0
+    else
+        WATCH_ON=1
     fi
 }
 
@@ -659,6 +668,24 @@ step_advanced() {
     fi
 }
 
+step_watch() {
+    say "  Наблюдение за консолью: журнал консоли серверов на хосте, отчёты о падениях,"
+    say "  защита от ботов по консоли (флуд подключений, перебор RCON, застрявшие боты)."
+    if ! ask_yn "Включить наблюдение за консолью?" "$([ "$WATCH_ON" = 1 ] && echo y || echo n)"; then
+        WATCH_ON=0
+        return 0
+    fi
+    WATCH_ON=1
+    ask_number CONSOLE_LOG_DAYS "Сколько дней хранить журналы консоли" "$CONSOLE_LOG_DAYS" 1 365
+    say "  Защита по консоли: log — только сообщать, что сделала бы (для начала);"
+    say "  enforce — банить адрес на портах сервера и кикать; off — выключена."
+    while true; do
+        ask GUARD_CONSOLE "Режим: log, enforce или off" "$GUARD_CONSOLE"
+        case "$GUARD_CONSOLE" in log|enforce|off) return 0 ;; esac
+        fail "Одно из: log, enforce, off."
+    done
+}
+
 # URL вебхука — секрет (по нему кто угодно пишет в канал): ввод скрыт
 step_discord() {
     say "  Оповещения в Discord: обновление CS2, сервер не поднялся, самообновление."
@@ -724,6 +751,7 @@ step_service() {
         GUARD_ON=0
     fi
 
+    step_watch
     step_discord
 
     if ask_yn "Изменить дополнительные настройки (Steam-аккаунт, AppID, интервал проверки, логи)?" n; then
@@ -750,6 +778,7 @@ summary() {
     row "Проверка обновлений CS2" "каждые $VERSION_CHECK_INTERVAL с"
     row "Логи" "$LOG_LEVEL$([ "$LOG_FILE_ENABLED" = 1 ] && echo ', в journald и logs/' || echo ', только journald')"
     row "Автообновление сервиса" "$([ "$SELF_AUTOUPDATE" = 1 ] && echo 'да, каждую ночь' || echo 'нет')"
+    row "Наблюдение за консолью" "$([ "$WATCH_ON" = 1 ] && echo "да, журналы $CONSOLE_LOG_DAYS дн., защита по консоли: $GUARD_CONSOLE" || echo 'нет')"
     row "Discord" "$([ -n "$DISCORD_WEBHOOK" ] && mask "$DISCORD_WEBHOOK" || echo 'выключен')"
     row "Защита от флуда" "$([ "$GUARD_ON" = 1 ] && echo "да, больше $GUARD_PPS_LIMIT пакетов/с — блок на $GUARD_BAN_MINUTES мин" || echo 'нет')"
 }
@@ -802,6 +831,10 @@ write_env() {
         env_line GUARD_PPS_LIMIT "$GUARD_PPS_LIMIT"
         env_line GUARD_BAN_MINUTES "$GUARD_BAN_MINUTES"
         env_line GUARD_WHITELIST "$GUARD_WHITELIST"
+        echo
+        echo "# Наблюдение за консолью (watch.sh): дней хранить журналы; защита по консоли log|enforce|off"
+        env_line CONSOLE_LOG_DAYS "$CONSOLE_LOG_DAYS"
+        env_line GUARD_CONSOLE "$GUARD_CONSOLE"
     } > .env
     chmod 600 .env
 }
@@ -862,6 +895,15 @@ apply() {
             || warn "Автообновление не включилось. Позже: sudo $PWD/autoupdate.sh on"
     else
         ./autoupdate.sh off >/dev/null 2>&1 || true
+    fi
+
+    if [ "$WATCH_ON" = "1" ]; then
+        # перезапуск — чтобы демон перечитал .env
+        { ./watch.sh on >/dev/null 2>&1 && systemctl restart "$WATCH_UNIT" 2>/dev/null; } \
+            && ok "Наблюдение за консолью включено. Состояние: sudo $PWD/watch.sh status" \
+            || warn "Наблюдение за консолью не включилось. Подробности: sudo $PWD/watch.sh on"
+    else
+        ./watch.sh off >/dev/null 2>&1 || true
     fi
 
     if [ "$GUARD_ON" = "1" ]; then
