@@ -72,6 +72,8 @@ jobs:
           test -x check/guard.sh
           test -x check/doctor.sh
           test -f check/utils/notify.sh
+          test -x check/watch.sh
+          test -f check/utils/console.awk
           test -f check/utils/logging.sh
           test -f check/VERSION
           test ! -e check/.env

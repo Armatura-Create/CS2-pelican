@@ -6,6 +6,9 @@
 #   sudo ./guard.sh off               выключить и снять правила
 #   sudo ./guard.sh status            порты, блокировки, счётчики
 #   sudo ./guard.sh unblock <ip>|all  снять блокировку
+#   sudo ./guard.sh block <ip> [мин]  заблокировать вручную (15 мин)
+#   sudo ./guard.sh why <ip>          всё об адресе: баны, белый список, журналы
+#   sudo ./guard.sh rates [сек]       пакетов/с с каждого адреса (5 с)
 #   sudo ./guard.sh apply             один проход; его раз в минуту запускает таймер
 #
 # Действует только на UDP-порты CS2-серверов этой ноды (allocations из панели):
@@ -79,7 +82,7 @@ ruleset() {
         fi
     done
 
-    # `udp dport @ports jump game` — единственный вход в правила. Иначе лимит
+    # `udp/tcp dport @ports jump …` — единственный вход в правила. Иначе лимит
     # и блокировки легли бы на весь трафик хоста, включая SSH.
     cat <<EOF
 table $TABLE {
@@ -92,10 +95,23 @@ table $TABLE {
     set flood6 { type ipv6_addr; flags dynamic, timeout; timeout 10s; size 65536; }
     set a2s4   { type ipv4_addr; flags dynamic, timeout; timeout 10s; size 65536; }
     set a2s6   { type ipv6_addr; flags dynamic, timeout; timeout 10s; size 65536; }
+    # Баны по правилам консоли — только на портах того сервера, чья консоль это
+    # показала: консоль пишет владелец сервера, и бан на всю ноду дал бы ему
+    # банить игроков чужих серверов (watch.sh)
+    set blockport4 { type ipv4_addr . inet_service; flags timeout; size 65536; }
+    set blockport6 { type ipv6_addr . inet_service; flags timeout; size 65536; }
+    # Счётчики пакетов по адресам — для команды guard.sh rates
+    set seen4  { type ipv4_addr; flags dynamic, timeout; timeout 30s; size 65536; }
+    set seen6  { type ipv6_addr; flags dynamic, timeout; timeout 30s; size 65536; }
+    set rcon4  { type ipv4_addr; flags dynamic, timeout; timeout 60s; size 65536; }
+    set rcon6  { type ipv6_addr; flags dynamic, timeout; timeout 60s; size 65536; }
+    set tcp4   { type ipv4_addr; flags dynamic, timeout; timeout 10s; size 65536; }
+    set tcp6   { type ipv6_addr; flags dynamic, timeout; timeout 10s; size 65536; }
 
     chain prerouting {
         type filter hook prerouting priority -300; policy accept;
         udp dport @ports jump game
+        tcp dport @ports jump game_tcp
     }
 
     chain game {
@@ -103,11 +119,31 @@ table $TABLE {
         ip6 saddr @allow6 accept
         ip saddr @block4 counter drop
         ip6 saddr @block6 counter drop
+        ip saddr . udp dport @blockport4 counter drop
+        ip6 saddr . udp dport @blockport6 counter drop
+        update @seen4 { ip saddr counter }
+        update @seen6 { ip6 saddr counter }
         udp length < 17 counter drop
         @th,64,32 0xffffffff update @a2s4 { ip saddr limit rate over 20/second burst 40 packets } counter drop
         @th,64,32 0xffffffff update @a2s6 { ip6 saddr limit rate over 20/second burst 40 packets } counter drop
         update @flood4 { ip saddr limit rate over $PPS/second burst $PPS packets } add @block4 { ip saddr timeout ${BAN}m } log prefix "cs2guard flood " counter drop
         update @flood6 { ip6 saddr limit rate over $PPS/second burst $PPS packets } add @block6 { ip6 saddr timeout ${BAN}m } log prefix "cs2guard flood " counter drop
+    }
+
+    # TCP на игровом порту — это RCON (игроки ходят по UDP). Перебор пароля
+    # начинается с потока SYN: больше 20 в минуту — бан на сутки. Остальной
+    # TCP сверх 200 пакетов/с отбрасываем без бана: источник легко подделать.
+    chain game_tcp {
+        ip saddr @allow4 accept
+        ip6 saddr @allow6 accept
+        ip saddr @block4 counter drop
+        ip6 saddr @block6 counter drop
+        ip saddr . tcp dport @blockport4 counter drop
+        ip6 saddr . tcp dport @blockport6 counter drop
+        tcp flags & (syn | ack) == syn update @rcon4 { ip saddr limit rate over 20/minute burst 20 packets } add @block4 { ip saddr timeout 1440m } log prefix "cs2guard rcon " counter drop
+        tcp flags & (syn | ack) == syn update @rcon6 { ip6 saddr limit rate over 20/minute burst 20 packets } add @block6 { ip6 saddr timeout 1440m } log prefix "cs2guard rcon " counter drop
+        update @tcp4 { ip saddr limit rate over 200/second burst 200 packets } counter drop
+        update @tcp6 { ip6 saddr limit rate over 200/second burst 200 packets } counter drop
     }
 }
 EOF
@@ -166,27 +202,116 @@ apply() {
     fi
 }
 
+# ip → «4» / «6» / пусто (не адрес). Значение уходит в команду nft.
+ip_family() {
+    if [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then printf 4
+    elif [[ "$1" =~ ^[0-9A-Fa-f:]+$ ]] && [[ "$1" == *:* ]]; then printf 6
+    fi
+}
+
+# Частные адреса и мост Docker не блокируем никаким путём: за мостом стоят все
+# клиенты, проходящие через docker-proxy, и бан моста — бан всех.
+is_private() {
+    [[ "$1" =~ ^(10\.|127\.|0\.|192\.168\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.) ]] \
+        || [[ "${1,,}" =~ ^(::1$|fc|fd|fe80:) ]]
+}
+
+# Баны адреса по портам: «ip . порт» из blockport4/6, по одному на строку
+port_bans() {
+    local fam="$1" ip="$2"
+    nft -j list set $TABLE "blockport$fam" 2>/dev/null | jq -r --arg ip "$ip" \
+        '.nftables[]?.set.elem[]? | (.elem.val // .) | .concat? // empty | select(.[0] == $ip) | "\(.[0]) . \(.[1])"' 2>/dev/null || true
+}
+
 unblock() {
-    local what="${1:-}"
+    local what="${1:-}" fam e n=0
     table_exists || die "Защита не включена."
-    case "$what" in
-        all)
-            nft flush set $TABLE block4
-            nft flush set $TABLE block6
-            log_message "Все блокировки сняты." "success"
-            ;;
-        *.*.*.*)
-            [[ "$what" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "Не IPv4-адрес: $what"
-            nft delete element $TABLE block4 "{ $what }" || die "$what не заблокирован."
-            log_message "Блокировка снята: $what" "success"
-            ;;
-        *:*)
-            [[ "$what" =~ ^[0-9A-Fa-f:]+$ ]] || die "Не IPv6-адрес: $what"
-            nft delete element $TABLE block6 "{ $what }" || die "$what не заблокирован."
-            log_message "Блокировка снята: $what" "success"
-            ;;
-        *) die "Использование: sudo $0 unblock <ip>|all" ;;
-    esac
+    if [ "$what" = all ]; then
+        for e in block4 block6 blockport4 blockport6; do nft flush set $TABLE "$e"; done
+        log_message "Все блокировки сняты." "success"
+        return 0
+    fi
+    fam="$(ip_family "$what")"
+    [ -n "$fam" ] || die "Использование: sudo $0 unblock <ip>|all"
+    nft delete element $TABLE "block$fam" "{ $what }" 2>/dev/null && n=$((n + 1))
+    while IFS= read -r e; do
+        [ -n "$e" ] || continue
+        nft delete element $TABLE "blockport$fam" "{ $e }" 2>/dev/null && n=$((n + 1))
+    done < <(port_bans "$fam" "$what")
+    [ "$n" -gt 0 ] || die "$what не заблокирован."
+    log_message "Блокировка снята: $what" "success"
+}
+
+# block <ip> [минут] — ручной бан на всех игровых портах ноды (по умолчанию 15 мин)
+block() {
+    local ip="${1:-}" min="${2:-15}" fam
+    table_exists || die "Защита не включена."
+    fam="$(ip_family "$ip")"
+    [ -n "$fam" ] || die "Использование: sudo $0 block <ip> [минут]"
+    [[ "$min" =~ ^[1-9][0-9]{0,5}$ ]] || die "Минуты — целое число, получено: $min"
+    is_private "$ip" && die "$ip — частный адрес или мост Docker: за ним могут стоять все игроки, не блокирую."
+    nft add element $TABLE "block$fam" "{ $ip timeout ${min}m }"
+    log_message "Заблокирован вручную: $ip на $min мин" "success"
+}
+
+# ban-port <ip> <минут> <порт…> — бан только на портах одного сервера; для watch.sh
+ban_port() {
+    local ip="${1:-}" min="${2:-}" fam port
+    shift 2 || true
+    table_exists || die "Защита не включена."
+    fam="$(ip_family "$ip")"
+    [ -n "$fam" ] && [[ "$min" =~ ^[1-9][0-9]{0,5}$ ]] || die "Использование: $0 ban-port <ip> <минут> <порт…>"
+    is_private "$ip" && die "$ip — частный адрес, не блокирую."
+    for port in "$@"; do
+        [[ "$port" =~ ^[0-9]{1,5}$ ]] || continue
+        # add не продлевает уже стоящий бан, поэтому сначала delete
+        nft delete element $TABLE "blockport$fam" "{ $ip . $port }" 2>/dev/null || true
+        nft add element $TABLE "blockport$fam" "{ $ip . $port timeout ${min}m }"
+    done
+}
+
+# why <ip> — всё, что известно об адресе
+why() {
+    local ip="${1:-}" fam
+    fam="$(ip_family "$ip")"
+    [ -n "$fam" ] || die "Использование: sudo $0 why <ip>"
+    table_exists || die "Защита не включена."
+    echo "Адрес $ip"
+    if nft get element $TABLE "allow$fam" "{ $ip }" >/dev/null 2>&1; then
+        echo "  в белом списке (частная сеть или GUARD_WHITELIST): не ограничивается"
+    fi
+    if nft get element $TABLE "block$fam" "{ $ip }" >/dev/null 2>&1; then
+        echo "  заблокирован на всех игровых портах: $(nft get element $TABLE "block$fam" "{ $ip }" 2>/dev/null | grep -o 'expires [0-9hms]*' | head -n1)"
+    fi
+    local pb
+    pb="$(port_bans "$fam" "$ip")"
+    [ -z "$pb" ] || echo "  заблокирован на портах: $(printf '%s\n' "$pb" | awk '{print $3}' | paste -sd' ' -)"
+    echo
+    echo "Защита по трафику (ядро):"
+    journalctl -k -q --no-pager -o short --grep "cs2guard .*SRC=$ip " -n 10 2>/dev/null || true
+    echo
+    echo "Защита по консоли (cs2-watch):"
+    journalctl -u cs2-watch -q --no-pager -o cat --grep "$ip" -n 10 2>/dev/null || true
+}
+
+# rates [секунд] — пакеты в секунду с каждого адреса на игровые порты
+rates() {
+    local secs="${1:-5}" a b
+    [[ "$secs" =~ ^[1-9][0-9]?$ ]] || die "Использование: sudo $0 rates [секунд, 1-99]"
+    table_exists || die "Защита не включена."
+    # Текстовый вывод, а не -j: nft 0.9.3 (Ubuntu 20.04) в JSON счётчики
+    # элементов набора не печатает. «адрес … counter packets N bytes M»
+    snapshot() {
+        { nft list set $TABLE seen4; nft list set $TABLE seen6; } 2>/dev/null | tr '\n\t' '  ' \
+            | grep -o 'elements = {[^}]*}' | sed 's/^elements = {//; s/}$//' | tr ',' '\n' \
+            | awk '{ p = 0; b = 0; for (i = 1; i < NF; i++) { if ($i == "packets") p = $(i + 1); if ($i == "bytes") b = $(i + 1) }
+                     if ($1 != "") print $1, p, b }' || true
+    }
+    a="$(snapshot)"; sleep "$secs"; b="$(snapshot)"
+    printf '%-40s %10s %10s\n' "АДРЕС" "ПАКЕТ/С" "БАЙТ/ПАК"
+    awk -v s="$secs" 'NR == FNR { p[$1] = $2; o[$1] = $3; next }
+        { dp = $2 - p[$1]; db = $3 - o[$1]; if (dp > 0) printf "%-40s %10.1f %10d\n", $1, dp / s, db / dp }' \
+        <(printf '%s\n' "$a") <(printf '%s\n' "$b") | sort -k2 -nr | head -n 20
 }
 
 status() {
@@ -200,7 +325,9 @@ status() {
     echo "Порты: $(current_ports | paste -sd' ' -)"
     echo
     echo "Заблокированы сейчас:"
-    { nft list set $TABLE block4; nft list set $TABLE block6; } | sed -n '/elements/,/}/p' | grep . || echo "  никого"
+    { nft list set $TABLE block4; nft list set $TABLE block6; } | sed -n '/elements/,/}/p' | grep . || echo "  на всех портах — никого"
+    { nft list set $TABLE blockport4; nft list set $TABLE blockport6; } | sed -n '/elements/,/}/p' | grep . \
+        && echo "  (выше — баны на портах одного сервера: по консоли, cs2-watch)" || echo "  на портах отдельных серверов — никого"
     echo
     echo "Отброшено пакетов (по правилам):"
     nft list chain $TABLE game | grep -E 'counter packets [1-9]' || echo "  пока ничего"
@@ -262,13 +389,17 @@ off() {
 }
 
 case "${1:-status}" in
-    on)      on ;;
-    off)     off ;;
-    apply)   apply ;;
-    status)  status ;;
-    unblock) unblock "${2:-}" ;;
+    on)       on ;;
+    off)      off ;;
+    apply)    apply ;;
+    status)   status ;;
+    unblock)  unblock "${2:-}" ;;
+    block)    block "${2:-}" "${3:-15}" ;;
+    why)      why "${2:-}" ;;
+    rates)    rates "${2:-5}" ;;
+    ban-port) shift; ban_port "$@" ;;
     *)
-        echo "Использование: sudo $0 on|off|status|apply|unblock <ip>|all" >&2
+        echo "Использование: sudo $0 on|off|status|apply|unblock <ip>|all|block <ip> [мин]|why <ip>|rates [сек]" >&2
         exit 1
         ;;
 esac

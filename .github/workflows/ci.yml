@@ -69,6 +69,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker run --rm --cap-add NET_ADMIN -v "$PWD:/src:ro" debian:12 bash /src/tests/test-guard.sh
+      - name: watch.sh (консоль, падения, защита по консоли)
+        run: docker run --rm --cap-add NET_ADMIN -v "$PWD:/src:ro" debian:12 bash /src/tests/test-watch.sh
 
   service:
     name: Логика updater'а (SteamCMD, панель, update.sh)

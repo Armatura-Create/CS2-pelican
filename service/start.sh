@@ -61,6 +61,26 @@ if ! grep -q '^GUARD_PPS_LIMIT=' .env 2>/dev/null; then
     fi
 fi
 
+# Наблюдение за консолью (watch.sh) включаем так же: один раз, признак «уже
+# решено» — CONSOLE_LOG_DAYS в .env, пишется только после успешного включения.
+if ! grep -q '^CONSOLE_LOG_DAYS=' .env 2>/dev/null; then
+    if timeout 60 ./watch.sh on; then
+        ensure_env_setting CONSOLE_LOG_DAYS "14" "Наблюдение за консолью (watch.sh): сколько дней хранить журналы консоли серверов (не больше 365)"
+        ensure_env_setting GUARD_CONSOLE "log" "Защита по консоли: log — только писать, что сделал бы; enforce — бан на портах сервера и kickid; off"
+        log_message "Наблюдение за консолью включено автоматически (защита по консоли — пока только журнал). Выключить: sudo $PWD/watch.sh off" "info"
+    else
+        log_message "Наблюдение за консолью включить не удалось — попробую при следующем запуске. Вручную: sudo $PWD/watch.sh on" "warning"
+    fi
+fi
+
+# watch.sh работает постоянно и после обновления updater'а остался бы на старом
+# коде: ночное автообновление выполняет update.sh ПРЕДЫДУЩЕЙ версии, а тот о watch
+# не знает. Версию, с которой запущен, демон пишет в /run/cs2-watch/version.
+if systemctl is-active --quiet cs2-watch 2>/dev/null \
+    && [ "$(cat /run/cs2-watch/version 2>/dev/null || true)" != "$(cat VERSION 2>/dev/null || true)" ]; then
+    systemctl restart cs2-watch 2>/dev/null && log_message "Наблюдение за консолью перезапущено на новой версии." "info" || true
+fi
+
 # 1) Проверка, установлены ли SteamCMD и файлы CS2
 check_initial_install() {
     migrate_steamcmd_dir
