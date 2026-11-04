@@ -131,7 +131,7 @@ apply() {
     have="$(current_ports)"
     # Панель недоступна — оставляем порты, что уже стоят: не снимать же защиту
     if ! want="$(pelican_node_ports)"; then
-        log_message "Список портов из панели не получен (HTTP $PELICAN_CODE) — оставляю прежний." "warning"
+        log_message "Список портов из панели не получен — оставляю прежний." "warning"
         want="$have"
     fi
     want="$(printf '%s\n' "$want" | grep -E '^[0-9]{1,5}$' | sort -nu || true)"

@@ -12,6 +12,7 @@
 #   VERSION       целевая версия     (по умолчанию latest; можно откатиться: VERSION=v1.0.0)
 #   FORCE=1       обновлять даже посреди цикла обновления CS2 (опасно)
 #   BASE_URL      зеркало вместо GitHub Releases
+#   INSECURE=1    обновлять без файла .sha256 (только для локальных тестов)
 #
 # Этот же скрипт лежит в каталоге установки: его ночью запускает таймер
 # автообновления (см. autoupdate.sh) — уже из опубликованного релиза.
@@ -41,16 +42,22 @@ cs2_update() {
     fi
 
     # --- где установлено ---
-    local unit="" dir="${INSTALL_DIR:-}"
+    # Признак установки — не просто start.sh: у чужого сервиса он тоже бывает,
+    # и update.sh остановил бы его и переписал каталог через rsync --delete.
+    is_install_dir() { [ -f "$1/start.sh" ] && [ -f "$1/utils/managerPelican.sh" ]; }
+
+    local unit="" dir="${INSTALL_DIR:-}" u d
     if [ -n "$dir" ]; then
         unit="$(grep -rls "WorkingDirectory=$dir\$" /etc/systemd/system/*.service 2>/dev/null | head -n1 || true)"
     else
-        unit="$(grep -rls 'ExecStart=.*/start\.sh' /etc/systemd/system/*.service 2>/dev/null | head -n1 || true)"
-        [ -n "$unit" ] && dir="$(grep -oP '^WorkingDirectory=\K.*' "$unit" | head -n1)"
+        while IFS= read -r u; do
+            d="$(grep -oP '^WorkingDirectory=\K.*' "$u" | head -n1 || true)"
+            if [ -n "$d" ] && is_install_dir "$d"; then unit="$u"; dir="$d"; break; fi
+        done < <(grep -ls 'ExecStart=.*/start\.sh' /etc/systemd/system/*.service 2>/dev/null || true)
     fi
     [ -n "$dir" ] && [ -d "$dir" ] || die "Не нашёл установку CS2 Updater.
        Укажите явно: curl ... | sudo INSTALL_DIR=/opt/cs2-updater bash"
-    [ -f "$dir/start.sh" ] || die "В $dir нет start.sh — это не каталог CS2 Updater."
+    is_install_dir "$dir" || die "В $dir нет start.sh и utils/managerPelican.sh — это не каталог CS2 Updater."
 
     local svc; svc="$(basename "${unit:-cs2-updater.service}")"
     local cur;  cur="$($SUDO cat "$dir/VERSION" 2>/dev/null || echo "неизвестна")"
@@ -127,6 +134,12 @@ cs2_update() {
         ( cd "$tmp" && sha256sum -c --status "$ASSET.sha256" ) \
             || die "Контрольная сумма не сошлась — обновление отменено, сервис не тронут."
         ok "Контрольная сумма совпала."
+    elif [ "${INSECURE:-0}" = "1" ]; then
+        warn "Файла с контрольной суммой нет, а задан INSECURE=1 — обновляю без проверки."
+    else
+        # Раньше тут было молчаливое «ставим так»: ночью, от root
+        die "Нет файла с контрольной суммой — обновление отменено, сервис не тронут.
+       Для локальных тестов через BASE_URL: INSECURE=1"
     fi
 
     mkdir -p "$tmp/new"

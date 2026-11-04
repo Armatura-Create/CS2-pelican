@@ -135,6 +135,7 @@ load_current() {
     BASE_DIR="${BASE_DIR:-/home/cs2_base}"
     VERSION_CHECK_INTERVAL="${VERSION_CHECK_INTERVAL:-300}"
     UPDATE_COUNTDOWN_TIME="${UPDATE_COUNTDOWN_TIME:-300}"
+    STEAMCMD_TIMEOUT="${STEAMCMD_TIMEOUT:-3600}"
     RESTART_NOTIFY_CMD="${RESTART_NOTIFY_CMD:-}"
     LOG_LEVEL="${LOG_LEVEL:-INFO}"
     LOG_FILE_ENABLED="${LOG_FILE_ENABLED:-1}"
@@ -719,39 +720,52 @@ summary() {
     row "Защита от флуда" "$([ "$GUARD_ON" = 1 ] && echo "да, больше $GUARD_PPS_LIMIT пакетов/с — блок на $GUARD_BAN_MINUTES мин" || echo 'нет')"
 }
 
+# KEY="значение". Значение с $ ` " \ или переносом строки — через printf %q:
+# .env выполняется через source от root, и такой пароль Steam ломался или
+# выполнялся как код. Обычные значения — в кавычках, как раньше: install.sh
+# читает BASE_DIR из .env grep'ом.
+env_line() {
+    if [[ "$2" != *[\"\$\`\\]* ]] && [[ "$2" != *$'\n'* ]]; then
+        printf '%s="%s"\n' "$1" "$2"
+    else
+        printf '%s=%q\n' "$1" "$2"
+    fi
+}
+
 write_env() {
     # 600 ДО записи: в .env лежат ключи панели и, возможно, пароль Steam
     rm -f .env
     (umask 077; : > .env)
-    cat <<EOF > .env
-# Создан мастером настройки. Перенастроить: sudo $PWD/configure.sh
-BASE_DIR="$BASE_DIR"
-SRCDS_APPID="$SRCDS_APPID"
-STEAM_USER="$STEAM_USER"
-STEAM_PASS="$STEAM_PASS"
-STEAM_AUTH="$STEAM_AUTH"
-EXTRA_FLAGS="$EXTRA_FLAGS"
-
-PELICAN_URL="$PELICAN_URL"
-PELICAN_APP_TOKEN="$PELICAN_APP_TOKEN"
-PELICAN_API_TOKEN="$PELICAN_API_TOKEN"
-PELICAN_IMAGE="$PELICAN_IMAGE"
-PELICAN_NODE_ID="$PELICAN_NODE_ID"
-
-VERSION_CHECK_INTERVAL="$VERSION_CHECK_INTERVAL"
-UPDATE_COUNTDOWN_TIME="$UPDATE_COUNTDOWN_TIME"
-# sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя
-RESTART_NOTIFY_CMD="$RESTART_NOTIFY_CMD"
-
-LOG_LEVEL="$LOG_LEVEL"
-LOG_FILE_ENABLED="$LOG_FILE_ENABLED"
-
-# Защита от флуда (guard.sh): пакетов/с с одного адреса, минут блокировки,
-# адреса и подсети без ограничений через запятую (например, прокси-защита)
-GUARD_PPS_LIMIT="$GUARD_PPS_LIMIT"
-GUARD_BAN_MINUTES="$GUARD_BAN_MINUTES"
-GUARD_WHITELIST="$GUARD_WHITELIST"
-EOF
+    {
+        echo "# Создан мастером настройки. Перенастроить: sudo $PWD/configure.sh"
+        env_line BASE_DIR "$BASE_DIR"
+        env_line SRCDS_APPID "$SRCDS_APPID"
+        env_line STEAM_USER "$STEAM_USER"
+        env_line STEAM_PASS "$STEAM_PASS"
+        env_line STEAM_AUTH "$STEAM_AUTH"
+        env_line EXTRA_FLAGS "$EXTRA_FLAGS"
+        echo
+        env_line PELICAN_URL "$PELICAN_URL"
+        env_line PELICAN_APP_TOKEN "$PELICAN_APP_TOKEN"
+        env_line PELICAN_API_TOKEN "$PELICAN_API_TOKEN"
+        env_line PELICAN_IMAGE "$PELICAN_IMAGE"
+        env_line PELICAN_NODE_ID "$PELICAN_NODE_ID"
+        echo
+        env_line VERSION_CHECK_INTERVAL "$VERSION_CHECK_INTERVAL"
+        env_line UPDATE_COUNTDOWN_TIME "$UPDATE_COUNTDOWN_TIME"
+        env_line STEAMCMD_TIMEOUT "$STEAMCMD_TIMEOUT"
+        echo "# sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя"
+        env_line RESTART_NOTIFY_CMD "$RESTART_NOTIFY_CMD"
+        echo
+        env_line LOG_LEVEL "$LOG_LEVEL"
+        env_line LOG_FILE_ENABLED "$LOG_FILE_ENABLED"
+        echo
+        echo "# Защита от флуда (guard.sh): пакетов/с с одного адреса, минут блокировки,"
+        echo "# адреса и подсети без ограничений через запятую (например, прокси-защита)"
+        env_line GUARD_PPS_LIMIT "$GUARD_PPS_LIMIT"
+        env_line GUARD_BAN_MINUTES "$GUARD_BAN_MINUTES"
+        env_line GUARD_WHITELIST "$GUARD_WHITELIST"
+    } > .env
     chmod 600 .env
 }
 

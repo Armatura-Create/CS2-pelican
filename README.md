@@ -187,8 +187,9 @@ git tag v1.0.0 && git push origin v1.0.0
 
 Дальше [`.github/workflows/release.yml`](.github/workflows/release.yml) сам
 проверит скрипты, соберёт `cs2-updater.tar.gz` (содержимое `service/` плюс файл
-`VERSION`), посчитает `sha256`, убедится, что архив разворачивается и не содержит
-`.env`, и опубликует релиз. `install.sh` и `update.sh` на дедиках берут именно эти
+`VERSION`), посчитает `sha256`, убедится, что архив разворачивается, не содержит
+`.env` и все файлы в нём принадлежат root, и опубликует релиз. Без `.sha256`
+`install.sh` и `update.sh` ничего не ставят (для локальных тестов — `INSECURE=1`). `install.sh` и `update.sh` на дедиках берут именно эти
 файлы, поэтому сломанный архив до серверов не доедет.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) на каждый push и PR гоняет

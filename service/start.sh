@@ -39,6 +39,8 @@ ensure_env_setting() {
 
 ensure_env_setting RESTART_NOTIFY_CMD "$DEFAULT_RESTART_NOTIFY_CMD" \
     "Команда оповещения о рестарте: sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя"
+ensure_env_setting STEAMCMD_TIMEOUT "3600" \
+    "Сколько секунд ждать SteamCMD при обновлении CS2, пока серверы выключены; потом поднимаем их как есть"
 # Защиту от флуда (guard.sh) включаем сами — один раз, при первом запуске
 # версии, где она появилась. Признак «уже решено» — GUARD_PPS_LIMIT в .env:
 # его пишет и мастер настройки, и эта ветка. Выключил админ (guard.sh off) —
@@ -58,7 +60,8 @@ fi
 
 # 1) Проверка, установлены ли SteamCMD и файлы CS2
 check_initial_install() {
-    if [ ! -f "${BASE_DIR:-/home/cs2_base}/server/steamcmd/steamcmd.sh" ] \
+    migrate_steamcmd_dir
+    if [ ! -f "$(steamcmd_dir)/steamcmd.sh" ] \
        || [ ! -d "${BASE_DIR:-/home/cs2_base}/server/game/csgo" ]; then
         log_message "Выполняем первоначальную установку CS2..." "running"
         if ! install_or_update; then
@@ -99,14 +102,22 @@ run_update_cycle() {
 
     # КРИТИЧНО: что бы ни случилось со SteamCMD, остановленные серверы обязаны
     # вернуться. Раньше падение install_or_update убивало сервис и оставляло
-    # все игровые серверы выключенными.
-    if ! install_or_update; then
+    # все игровые серверы выключенными, а зависший SteamCMD держал их так часами.
+    if ! install_or_update "${STEAMCMD_TIMEOUT:-3600}"; then
         log_message "Обновление CS2 не удалось. Поднимаем серверы на старой версии." "error"
     fi
 
     log_message "Запускаем обратно остановленные сервера..." "running"
     start_servers_with_delay "$running_list" || true
-    verify_servers_started "$running_list" || true
+    # Не поднялся — ещё одна попытка: Wings мог не успеть, панель — ответить 5xx.
+    # Если виноват аддон, несовместимый с новой CS2, вторая попытка не поможет,
+    # но и не навредит.
+    if ! verify_servers_started "$running_list"; then
+        local retry_list="$VERIFY_PENDING"
+        log_message "Пробую запустить ещё раз: $(printf '%s' "$retry_list" | paste -sd' ' -)" "warning"
+        start_servers_with_delay "$retry_list" || true
+        verify_servers_started "$retry_list" 120 || true
+    fi
 
     [ -z "$lock_fd" ] || exec {lock_fd}>&-
     log_message "Цикл обновления CS2 завершён." "info"

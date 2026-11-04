@@ -35,7 +35,7 @@ steamcmd_build_is_current() {
 
     # Анонимный вход: сведения о приложении публичные, а пароль в аргументах
     # был бы виден всем в ps.
-    remote_build="$(timeout 120 "$base/steamcmd/steamcmd.sh" +login anonymous \
+    remote_build="$(timeout 120 "$(steamcmd_dir)/steamcmd.sh" +login anonymous \
             +app_info_update 1 +app_info_print "$appid" +quit 2>/dev/null \
         | sed -n '/"branches"/,$p' | sed -n "/\"$branch\"/,/}/p" \
         | grep -m1 '"buildid"' | tr -cd '0-9' || true)"
@@ -219,7 +219,8 @@ stop_running_servers_for_update() {
 # «Панель приняла start» ничего не доказывает: после обновления CS2 до
 # 1.41.8.2 оба сервера падали через 6 секунд после старта (аддон не находил
 # сигнатуры), а updater писал «Запускаем сервер» — и молчал.
-# 0 — все поднялись, 1 — кто-то нет (подробности в логе).
+# 0 — все поднялись, 1 — кто-то нет (подробности в логе, список — в VERIFY_PENDING).
+VERIFY_PENDING=""
 verify_servers_started() {
     local servers_list="$1" timeout="${2:-180}"
     [ -n "$servers_list" ] || return 0
@@ -242,6 +243,7 @@ verify_servers_started() {
         pending="$still"
     done
 
+    VERIFY_PENDING="$pending"
     if [ -z "$pending" ]; then
         log_message "Все серверы после обновления запущены." "success"
         return 0
