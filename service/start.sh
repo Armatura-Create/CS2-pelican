@@ -39,6 +39,22 @@ ensure_env_setting() {
 
 ensure_env_setting RESTART_NOTIFY_CMD "$DEFAULT_RESTART_NOTIFY_CMD" \
     "Команда оповещения о рестарте: sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя"
+# Защиту от флуда (guard.sh) включаем сами — один раз, при первом запуске
+# версии, где она появилась. Признак «уже решено» — GUARD_PPS_LIMIT в .env:
+# его пишет и мастер настройки, и эта ветка. Выключил админ (guard.sh off) —
+# ключ остаётся, и обратно не включаем. Не вышло (apt без сети, занят dpkg) —
+# ключ не пишем и пробуем при следующем запуске. timeout — чтобы зависший apt
+# не остановил проверку обновлений CS2.
+if ! grep -q '^GUARD_PPS_LIMIT=' .env 2>/dev/null; then
+    if timeout 300 ./guard.sh on; then
+        ensure_env_setting GUARD_PPS_LIMIT "1500" "Защита от флуда (guard.sh): больше стольких пакетов/с с одного адреса — блокировка"
+        ensure_env_setting GUARD_BAN_MINUTES "60" "Защита от флуда: на сколько минут блокировать"
+        ensure_env_setting GUARD_WHITELIST "" "Защита от флуда: адреса и подсети без ограничений через запятую (прокси-защита с общим адресом)"
+        log_message "Защита игровых портов от флуда включена автоматически. Выключить: sudo $PWD/guard.sh off" "info"
+    else
+        log_message "Защиту от флуда включить не удалось — попробую при следующем запуске. Вручную: sudo $PWD/guard.sh on" "warning"
+    fi
+fi
 
 # 1) Проверка, установлены ли SteamCMD и файлы CS2
 check_initial_install() {

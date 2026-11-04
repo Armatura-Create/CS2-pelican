@@ -23,6 +23,7 @@ REPO="${REPO:-Armatura-Create/CS2-pelican}"
 EGG_NAME="CS2 with base files"
 DEFAULT_IMAGE="docker.io/scrender/base-files-cs2:latest"
 AUTOUPDATE_TIMER="cs2-updater-autoupdate.timer"
+GUARD_TIMER="cs2-guard.timer"
 # Путь обязан совпадать с CYCLE_LOCK в start.sh
 CYCLE_LOCK="/run/cs2-updater-cycle.lock"
 
@@ -143,6 +144,15 @@ load_current() {
         SELF_AUTOUPDATE=0
     else
         SELF_AUTOUPDATE=1
+    fi
+
+    GUARD_PPS_LIMIT="${GUARD_PPS_LIMIT:-1500}"
+    GUARD_BAN_MINUTES="${GUARD_BAN_MINUTES:-60}"
+    GUARD_WHITELIST="${GUARD_WHITELIST:-}"
+    if [ "$RECONFIGURE" -eq 1 ] && ! systemctl is-enabled --quiet "$GUARD_TIMER" 2>/dev/null; then
+        GUARD_ON=0
+    else
+        GUARD_ON=1
     fi
 }
 
@@ -673,6 +683,15 @@ step_service() {
         SELF_AUTOUPDATE=0
     fi
 
+    say "  Защита от флуда: адрес, шлющий на игровой порт больше $GUARD_PPS_LIMIT пакетов/с, блокируется"
+    say "  на $GUARD_BAN_MINUTES мин (nftables, только порты CS2-серверов). Если игроки приходят через"
+    say "  прокси-защиту с общим адресом — впишите его в GUARD_WHITELIST в .env."
+    if ask_yn "Включить защиту игровых портов от флуда?" "$([ "$GUARD_ON" = 1 ] && echo y || echo n)"; then
+        GUARD_ON=1
+    else
+        GUARD_ON=0
+    fi
+
     if ask_yn "Изменить дополнительные настройки (Steam-аккаунт, AppID, интервал проверки, логи)?" n; then
         step_advanced
     fi
@@ -697,6 +716,7 @@ summary() {
     row "Проверка обновлений CS2" "каждые $VERSION_CHECK_INTERVAL с"
     row "Логи" "$LOG_LEVEL$([ "$LOG_FILE_ENABLED" = 1 ] && echo ', в journald и logs/' || echo ', только journald')"
     row "Автообновление сервиса" "$([ "$SELF_AUTOUPDATE" = 1 ] && echo 'да, каждую ночь' || echo 'нет')"
+    row "Защита от флуда" "$([ "$GUARD_ON" = 1 ] && echo "да, больше $GUARD_PPS_LIMIT пакетов/с — блок на $GUARD_BAN_MINUTES мин" || echo 'нет')"
 }
 
 write_env() {
@@ -725,6 +745,12 @@ RESTART_NOTIFY_CMD="$RESTART_NOTIFY_CMD"
 
 LOG_LEVEL="$LOG_LEVEL"
 LOG_FILE_ENABLED="$LOG_FILE_ENABLED"
+
+# Защита от флуда (guard.sh): пакетов/с с одного адреса, минут блокировки,
+# адреса и подсети без ограничений через запятую (например, прокси-защита)
+GUARD_PPS_LIMIT="$GUARD_PPS_LIMIT"
+GUARD_BAN_MINUTES="$GUARD_BAN_MINUTES"
+GUARD_WHITELIST="$GUARD_WHITELIST"
 EOF
     chmod 600 .env
 }
@@ -785,6 +811,13 @@ apply() {
             || warn "Автообновление не включилось. Позже: sudo $PWD/autoupdate.sh on"
     else
         ./autoupdate.sh off >/dev/null 2>&1 || true
+    fi
+
+    if [ "$GUARD_ON" = "1" ]; then
+        ./guard.sh on >/dev/null 2>&1 && ok "Защита от флуда включена. Состояние: sudo $PWD/guard.sh status" \
+            || warn "Защита от флуда не включилась. Подробности: sudo $PWD/guard.sh on"
+    else
+        ./guard.sh off >/dev/null 2>&1 || true
     fi
 
     if systemctl is-active --quiet "$svc"; then

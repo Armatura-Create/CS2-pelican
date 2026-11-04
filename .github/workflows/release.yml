@@ -53,7 +53,10 @@ jobs:
           find dist/cs2-updater \( -name '.DS_Store' -o -name 'Thumbs.db' -o -name '*.swp' \) -delete
           echo "$VERSION" > dist/cs2-updater/VERSION
           chmod +x dist/cs2-updater/*.sh
-          tar -czf cs2-updater.tar.gz -C dist cs2-updater
+          # Владелец — root: tar и rsync от root переносят владельца из архива
+          # на хост, а эти скрипты выполняет root. С владельцем runner (uid 1001)
+          # любой пользователь хоста с uid 1001 мог их переписать и получить root.
+          tar --owner=0 --group=0 --numeric-owner -czf cs2-updater.tar.gz -C dist cs2-updater
           sha256sum cs2-updater.tar.gz > cs2-updater.tar.gz.sha256
           echo "--- содержимое архива:"
           tar -tzf cs2-updater.tar.gz
@@ -66,12 +69,15 @@ jobs:
           test -x check/test-pelican.sh
           test -x check/update.sh
           test -x check/autoupdate.sh
+          test -x check/guard.sh
           test -f check/utils/logging.sh
           test -f check/VERSION
           test ! -e check/.env
           test ! -e check/.DS_Store
           test ! -e check/docker && test ! -e check/egg
           grep -q '^v[0-9]' check/VERSION
+          bad="$(tar -tvzf cs2-updater.tar.gz --numeric-owner | awk '$2 != "0/0"')"
+          [ -z "$bad" ] || { echo "В архиве файлы не root:root:"; echo "$bad"; exit 1; }
           echo "Архив в порядке"
 
       - name: Опубликовать релиз

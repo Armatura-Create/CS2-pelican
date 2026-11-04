@@ -89,6 +89,30 @@ get_servers_by_image_app() {
     echo "$server_ids"
 }
 
+# Порты (allocations) всех CS2-серверов ноды, по одному на строку, — для guard.sh.
+# Образ сравниваем без тега: серверы на :dev и :latest одинаково наши.
+# Листаем все страницы: per_page=100 без этого терял серверы на большой панели.
+# 1 — панель не ответила или ответ не разобран: вызывающий оставит прежний список.
+pelican_node_ports() {
+    [ -n "${PELICAN_URL:-}" ] && [ -n "${PELICAN_APP_TOKEN:-}" ] \
+        && [[ "${PELICAN_NODE_ID:-}" =~ ^[0-9]+$ ]] && [ -n "${PELICAN_IMAGE:-}" ] || return 1
+
+    local page=1 pages=1
+    while [ "$page" -le "$pages" ]; do
+        pelican_request GET \
+            "$(pelican_base_url)/api/application/servers?include=allocations&per_page=100&page=$page" \
+            "$PELICAN_APP_TOKEN"
+        pelican_ok || return 1
+        printf '%s' "$PELICAN_BODY" | jq -r --arg img "$PELICAN_IMAGE" --argjson node "$PELICAN_NODE_ID" '
+            def repo: sub(":[^:/]*$"; "");
+            .data[].attributes
+            | select(.node == $node and ((.container.image // "") | repo) == ($img | repo))
+            | .relationships.allocations.data[]?.attributes.port' || return 1
+        pages="$(printf '%s' "$PELICAN_BODY" | jq -r '.meta.pagination.total_pages // 1' 2>/dev/null || echo 1)"
+        page=$((page + 1))
+    done
+}
+
 # Печатает состояние сервера: running | starting | stopping | offline,
 # или unknown, если панель не ответила. Лог — в stderr, в stdout только состояние.
 server_state() {

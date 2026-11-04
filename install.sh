@@ -83,7 +83,8 @@ cs2_install() {
         fi
 
         mkdir -p "$tmp/new"
-        tar -xzf "$tmp/$ASSET" -C "$tmp/new" --strip-components=1 || die "Архив не распаковался."
+        # --no-same-owner: владелец из архива не переносится (релизы до v1.2.11 — uid 1001)
+        tar -xzf "$tmp/$ASSET" -C "$tmp/new" --strip-components=1 --no-same-owner || die "Архив не распаковался."
     }
 
     # Обновление тем update.sh, что лежит в свежем релизе
@@ -108,7 +109,7 @@ cs2_install() {
         base="$(grep -oP '^BASE_DIR="\K[^"]+' "$d/.env" 2>/dev/null || true)"
 
         echo >&2
-        warn "Будет удалено: сервис ${svc:-?}.service, таймер автообновления, $d и его бэкапы."
+        warn "Будет удалено: сервис ${svc:-?}.service, таймер автообновления, защита от флуда, $d и его бэкапы."
         [ -z "$base" ] || info "Файлы игры ($base) — спрошу отдельно, по умолчанию останутся."
         read -rp "  Для подтверждения введите «удалить»: " answer || answer=""
         if [ "$answer" != "удалить" ]; then
@@ -121,6 +122,8 @@ cs2_install() {
             systemctl disable --now "$svc.service" >/dev/null 2>&1 || true
             rm -f "/etc/systemd/system/$svc.service"
         fi
+        # Снимает правила nftables и свой таймер — до удаления каталога со скриптом
+        [ ! -x "$d/guard.sh" ] || "$d/guard.sh" off >/dev/null 2>&1 || true
         systemctl disable --now cs2-updater-autoupdate.timer >/dev/null 2>&1 || true
         rm -f /etc/systemd/system/cs2-updater-autoupdate.service /etc/systemd/system/cs2-updater-autoupdate.timer
         systemctl daemon-reload
@@ -193,6 +196,9 @@ cs2_install() {
     fetch_release
     mkdir -p "$dir"
     cp -a "$tmp/new/." "$dir/"
+    # Эти скрипты выполняет root — писать в них может только root
+    chown -R root:root "$dir"
+    chmod -R go-w "$dir"
     chmod +x "$dir"/*.sh
     ok "Развёрнута версия $(cat "$dir/VERSION" 2>/dev/null || echo "$VERSION") в $dir"
 
