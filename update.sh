@@ -130,7 +130,8 @@ cs2_update() {
     fi
 
     mkdir -p "$tmp/new"
-    tar -xzf "$tmp/$ASSET" -C "$tmp/new" --strip-components=1 || die "Архив не распаковался."
+    # --no-same-owner: владелец из архива не переносится (релизы до v1.2.11 — uid 1001)
+    tar -xzf "$tmp/$ASSET" -C "$tmp/new" --strip-components=1 --no-same-owner || die "Архив не распаковался."
     local new; new="$(cat "$tmp/new/VERSION" 2>/dev/null || echo "?")"
 
     if [ "$cur" = "$new" ] && [ "${FORCE:-0}" != "1" ]; then
@@ -196,6 +197,9 @@ cs2_update() {
             warn "НЕ УДАЛОСЬ вернуть бэкап! Он лежит здесь: $backup"
             return 0
         fi
+        # бэкап версии до v1.2.11 мог принести файлы с владельцем uid 1001
+        $SUDO chown -R root:root "$dir" 2>/dev/null || true
+        $SUDO chmod -R go-w "$dir" 2>/dev/null || true
         [ "$was_active" -eq 1 ] || { info "Файлы возвращены на $cur, сервис оставлен выключенным."; return 0; }
         start_service
         if $SUDO systemctl is-active --quiet "$svc"; then
@@ -216,6 +220,10 @@ cs2_update() {
         rollback
         die "Обновление прервано, см. сообщения выше."
     }
+    # Скрипты выполняет root (сервис и ночной таймер) — писать в них может только
+    # root. rsync -a переносит владельца распаковки, а до v1.2.11 архив нёс uid 1001.
+    $SUDO chown -R root:root "$dir"
+    $SUDO chmod -R go-w "$dir"
     $SUDO chmod +x "$dir"/*.sh
 
     # Проверяем результат на диске, а не код возврата rsync: рапортовать об

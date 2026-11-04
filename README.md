@@ -145,6 +145,16 @@ Updater не рассылает `say` — он вызывает команду �
 
 ---
 
+## Защита от флуда
+
+UDP-флуд с одного адреса не роняет сервер, но заставляет его лагать. На хосте его
+отсекает `service/guard.sh` — правила nftables только для игровых портов CS2-серверов
+ноды; порты новых серверов подхватываются раз в минуту. Включается в мастере
+установки или командой `sudo /opt/cs2-updater/guard.sh on`, подробнее —
+в [service/INSTALL.md](service/INSTALL.md#защита-от-флуда).
+
+---
+
 ## Известные риски
 
 ### Переменные сервера проходят через `eval`
@@ -211,3 +221,17 @@ PY
 
 `egg/pelican.json` генерируется из `egg/pelican.yaml` — правьте YAML и пересобирайте JSON,
 иначе файлы разъедутся (однажды уже разъехались по полю `sort`).
+
+```bash
+# защита от флуда на настоящем nftables (одноразовый контейнер)
+docker run --rm --cap-add NET_ADMIN -v "$PWD:/src:ro" debian:12 bash /src/tests/test-guard.sh
+```
+
+---
+
+## Лицензия
+
+GNU General Public License v3 или новее — см. [LICENSE](LICENSE).
+
+Часть решений перенята из [K4ryuu/CS2-Egg-Go](https://github.com/K4ryuu/CS2-Egg-Go)
+(GPLv3): правила `service/guard.sh` повторяют статические правила его модуля guard.

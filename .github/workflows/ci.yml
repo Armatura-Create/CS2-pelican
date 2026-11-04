@@ -21,7 +21,7 @@ jobs:
 
       - name: shellcheck
         run: |
-          shellcheck -S error install.sh update.sh
+          shellcheck -S error install.sh update.sh tests/*.sh
           find docker service -name '*.sh' -print0 | xargs -0 shellcheck -S error
 
       - name: Самопроверка логики аддонов
@@ -62,6 +62,13 @@ jobs:
             fi
           done
           echo "RCON OK"
+
+  guard:
+    name: Защита от флуда на настоящем nftables
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker run --rm --cap-add NET_ADMIN -v "$PWD:/src:ro" debian:12 bash /src/tests/test-guard.sh
 
   docker:
     name: Сборка образа
