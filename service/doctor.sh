@@ -119,6 +119,19 @@ else
     warn "Выключено: sudo $DIR/watch.sh on"
 fi
 
+section "Склад аддонов (${BASE_DIR}/server/.cs2-addons)"
+store="$BASE_DIR/server/.cs2-addons"
+if [ -f "$store/index" ]; then
+    age=$(( ( $(date +%s) - $(stat -c %Y "$store/index") ) / 60 ))
+    [ "$age" -le 120 ] && ok "Индекс свежий ($age мин), версий на складе: $(find "$store" -mindepth 3 -maxdepth 3 -name .ready | wc -l), $(du -sh "$store" 2>/dev/null | cut -f1)" \
+        || warn "Индекс не обновлялся $age мин — серверы качают аддоны сами (журнал: journalctl -u $svc | grep -i склад)"
+    while read -r k a v; do
+        case "$k" in latest|beta|pin) printf '      %s %s: %s\n' "$a" "$k" "$v" ;; esac
+    done < "$store/index"
+else
+    warn "Склада пока нет: появится после запуска сервиса с образом v1.4.0+ (или образа ещё нет на ноде)"
+fi
+
 section "Discord"
 if [ -z "${DISCORD_WEBHOOK:-}" ]; then
     warn "Оповещения выключены (DISCORD_WEBHOOK в .env пуст)"

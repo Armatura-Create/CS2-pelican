@@ -38,7 +38,8 @@
 
 **В `/mnt` нельзя писать.** Всё, что контейнер модифицирует, должно быть
 исключено из `create_symlinks` (`docker/scripts/update.sh`): сейчас это
-`gameinfo.gi`, `game/versions.txt` и `game/csgo/addons/`. Добавляете новый
+`gameinfo.gi`, `game/versions.txt` и `game/csgo/addons/`. Склад аддонов
+`/mnt/.cs2-addons/` тоже исключён: из него ставят, а не запускают. Добавляете новый
 изменяемый путь — добавьте его туда же, иначе запись уйдёт в read-only mount.
 
 **`egg/pelican.yaml` — источник правды, `egg/pelican.json` генерируется из него.**
@@ -60,9 +61,24 @@ semver: пре-релиз старше своего релиза. Строкам
 меняет: базовая версия лежит в `gameinfo.gi.host`, прежний файл — в `.bak`.
 Правки пользователя живут до следующего изменения файла Valve.
 
+**Установка аддона — три шага, общие для сервера и склада** (`ensure_addon`):
+`addon_target` (версия: своё закрепление → закрепление ноды из индекса склада →
+«последняя» из индекса → GitHub), `prepare_tree` (скачать и разложить в каталог —
+ровно в том виде, как ложится на сервер; если готовое дерево есть на складе —
+шаг пропускается) и `apply_tree` (положить на сервер). Склад на хосте
+(`service/utils/addons-store.sh`) готовит версии через `scripts/addon-store.sh`
+в одноразовом контейнере из образа серверов, от nobody, — тем же
+`prepare_tree`, поэтому раскладка не расходится. Не дублируйте разбор архивов
+на хосте. Индекс склада старше двух часов не используется. `.NET` ссылками на
+склад (`ADDONS_SHARED_RUNTIME`) — только если дерево со склада; каталог из
+ссылок перед копией удаляется (`drop_links`), иначе запись ушла бы в /mnt.
+
 **Наличие аддона проверяется по файлу-маркеру, не по каталогу** (`addon_marker`).
 CounterStrikeSharp кладёт `addons/metamod/counterstrikesharp.vdf`, поэтому каталог
-`addons/metamod` существует и без самого MetaMod.
+`addons/metamod` существует и без самого MetaMod. ModSharp —
+`game/sharp/bin/libmodsharp.so`, его .NET — `game/sharp/runtime/dotnet`; строку
+`Game sharp` в `gameinfo.gi` ставит и снимает `sync_gameinfo` наравне с
+`csgo/addons/*`.
 
 **Сбой сети не должен мешать серверу стартовать.** Аддоны опциональны:
 недоступный GitHub или metamodsource — это `warning`/`error` в консоль, а не
@@ -262,7 +278,7 @@ find docker service -name '*.sh' -print0 | xargs -0 -n1 bash -n
 # логика аддонов (gameinfo.gi, выбор релизов GitHub, сравнение версий);
 # coreutils обязателен — сравнение версий опирается на GNU sort -V, как в образе
 docker run --rm -v "$PWD/docker:/src" alpine:3 \
-    sh -c 'apk add -q bash jq coreutils && bash /src/scripts/test-addons.sh'
+    sh -c 'apk add -q bash jq coreutils rsync findutils && bash /src/scripts/test-addons.sh'
 
 # shellcheck на уровне error — репозиторий держим чистым
 docker run --rm -v "$PWD:/src:ro" -w /src koalaman/shellcheck-alpine:stable \

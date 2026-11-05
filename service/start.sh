@@ -19,6 +19,7 @@ fi
 source "./utils/managerSteamCMD.sh"
 source "./utils/version.sh"
 source "./utils/notify.sh"
+source "./utils/addons-store.sh"
 
 # Настройки, появившиеся в новых версиях, дописываем в .env со значением по
 # умолчанию — чтобы их было видно и можно было поменять. Именно здесь, а не в
@@ -42,6 +43,12 @@ ensure_env_setting RESTART_NOTIFY_CMD "$DEFAULT_RESTART_NOTIFY_CMD" \
     "Команда оповещения о рестарте: sw_restart_notify (Swiftly), css_restart_notify (CounterStrikeSharp), mm_restart_notify (MetaMod) или своя"
 ensure_env_setting DISCORD_WEBHOOK "" \
     "Оповещения в Discord (обновление CS2, сервер не поднялся, самообновление): URL вебхука канала, пусто — выключено"
+ensure_env_setting GITHUB_TOKEN "" \
+    "Токен GitHub (read-only) для склада аддонов: лимит 5000 запросов в час вместо 60; пусто — без него"
+ensure_env_setting PIN_METAMOD "" "Закрепить версию на всю ноду (серверы без своей ставят её, даже старше): например git1380"
+ensure_env_setting PIN_CSS "" "Закрепить CounterStrikeSharp на всю ноду: например v1.0.360"
+ensure_env_setting PIN_SWIFTLY "" "Закрепить Swiftly на всю ноду: например v1.4.10"
+ensure_env_setting PIN_MODSHARP "" "Закрепить ModSharp на всю ноду: например git-197"
 ensure_env_setting STEAMCMD_TIMEOUT "3600" \
     "Сколько секунд ждать SteamCMD при обновлении CS2, пока серверы выключены; потом поднимаем их как есть"
 # Защиту от флуда (guard.sh) включаем сами — один раз, при первом запуске
@@ -157,8 +164,22 @@ run_update_cycle() {
     log_message "Цикл обновления CS2 завершён." "info"
 }
 
+# Склад аддонов — в фоне и под flock: первая подготовка качает сотни мегабайт,
+# а проверка обновлений CS2 ждать не должна. Остановка сервиса убьёт и фон —
+# недоделанные каталоги склад уберёт сам.
+ADDONS_LOCK="/run/cs2-addons-store.lock"
+refresh_addon_store_bg() {
+    ( flock -n 9 || exit 0; refresh_addon_store ) 9>"$ADDONS_LOCK" &
+}
+
 main_loop() {
+    local last_store=0 now
     while true; do
+        now="$(date +%s)"
+        if (( now - last_store >= 1800 )); then
+            refresh_addon_store_bg
+            last_store="$now"
+        fi
         if update_available; then
             run_update_cycle
         fi

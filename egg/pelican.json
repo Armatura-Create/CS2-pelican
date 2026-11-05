@@ -94,6 +94,18 @@
         },
         {
             "sort": 5,
+            "name": "Allow Tokenless (без GSLT)",
+            "description": "Запускать сервер без GSLT (Game Server Login Token).\n\nСервер не попадёт в публичный список серверов, к нему можно подключиться\nпо IP. Для тестовых и закрытых серверов или когда токен заблокирован.\nМеняет RequireLoginForDedicatedServers в gameinfo.gi.",
+            "env_variable": "ALLOW_TOKENLESS",
+            "default_value": 0,
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ]
+        },
+        {
+            "sort": 6,
             "name": "Game Mode",
             "description": "Это параметр, который определяет режим игры на\nсервере. Подробнее: \nhttps://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types",
             "env_variable": "GAME_MODE",
@@ -107,7 +119,7 @@
             ]
         },
         {
-            "sort": 6,
+            "sort": 7,
             "name": "Game Type",
             "description": "Это параметр, который определяет тип игры на сервере.\nПодробнее: \nhttps://developer.valvesoftware.com/wiki/Counter-Strike_2/Dedicated_Servers#Game_Modes_.26_Types",
             "env_variable": "GAME_TYPE",
@@ -121,7 +133,7 @@
             ]
         },
         {
-            "sort": 7,
+            "sort": 8,
             "name": "Max Players",
             "description": "Максимальное количество слотов на сервере",
             "env_variable": "SRCDS_MAXPLAYERS",
@@ -134,7 +146,7 @@
             ]
         },
         {
-            "sort": 8,
+            "sort": 9,
             "name": "Valve Anti-Cheat",
             "description": "Включить или отключить Valve Anti-Cheat на вашем сервере. По\nумолчанию — Включено.",
             "env_variable": "VAC_ENABLED",
@@ -146,7 +158,7 @@
             ]
         },
         {
-            "sort": 9,
+            "sort": 10,
             "name": "Addons - Platform",
             "description": "Какую платформу аддонов ставить на сервер. Варианты взаимоисключающие.\n\nnone    — чистый сервер, аддоны не ставятся\nmetamod — MetaMod:Source, при желании с CounterStrikeSharp поверх\nswiftly — SwiftlyS2, самостоятельный фреймворк, MetaMod ему не нужен\n\nПри смене платформы файлы старых аддонов НЕ удаляются: убирается только\nзапись из gameinfo.gi, поэтому обратное переключение мгновенное и\nплагины с конфигами остаются на месте.",
             "env_variable": "ADDON_PLATFORM",
@@ -160,7 +172,7 @@
             ]
         },
         {
-            "sort": 10,
+            "sort": 11,
             "name": "Addons - CounterStrikeSharp",
             "description": "Ставить ли CounterStrikeSharp поверх MetaMod.\n\nРаботает ТОЛЬКО при Addons - Platform = metamod: CSS является плагином\nMetaMod и без него не запускается. При platform = swiftly или none\nопция игнорируется.\n\nLink: https://github.com/roflmuffin/CounterStrikeSharp",
             "env_variable": "CSS_ENABLED",
@@ -172,7 +184,7 @@
             ]
         },
         {
-            "sort": 11,
+            "sort": 12,
             "name": "Auto Update - MetaMod",
             "description": "Подтягивать новые версии MetaMod при каждом запуске сервера.\n\nНа УСТАНОВКУ не влияет: если выбрана платформа metamod, а MetaMod ещё не\nустановлен, он будет поставлен в любом случае. Выключите, чтобы\nзафиксировать текущую версию.\n\nLink: https://www.metamodsource.net/downloads.php/?branch=master",
             "env_variable": "METAMOD_AUTOUPDATE",
@@ -184,7 +196,7 @@
             ]
         },
         {
-            "sort": 12,
+            "sort": 13,
             "name": "Auto Update - CounterStrikeSharp",
             "description": "Подтягивать новые версии CounterStrikeSharp при каждом запуске сервера.\n\nНа УСТАНОВКУ не влияет: если CSS включён, а его нет, он будет поставлен\nв любом случае. Выключите, чтобы зафиксировать текущую версию.\n\nLink: https://github.com/roflmuffin/CounterStrikeSharp",
             "env_variable": "CSS_AUTOUPDATE",
@@ -196,7 +208,7 @@
             ]
         },
         {
-            "sort": 13,
+            "sort": 14,
             "name": "Auto Update - Swiftly",
             "description": "Подтягивать новые версии Swiftly (SwiftlyS2) при каждом запуске сервера.\n\nНа УСТАНОВКУ не влияет: если выбрана платформа swiftly, а Swiftly ещё не\nустановлен, он будет поставлен в любом случае. Выключите, чтобы\nзафиксировать текущую версию.\n\nLink: https://github.com/swiftly-solution/swiftlys2",
             "env_variable": "SWIFTLY_AUTOUPDATE",
@@ -208,7 +220,7 @@
             ]
         },
         {
-            "sort": 14,
+            "sort": 15,
             "name": "Swiftly - Beta",
             "description": "Ставить бета-версии Swiftly (pre-release на GitHub).\n\nПосле обновлений CS2 исправления у Swiftly обычно выходят сначала в\nбете, а стабильная версия падает вместе с сервером — включите, чтобы\nсервер поднялся на бете.\n\nВыключите — и обновления пойдут только до стабильных версий. Уже\nстоящая бета при этом не откатится: Swiftly обновится, когда выйдет\nстабильная новее неё.",
             "env_variable": "SWIFTLY_BETA",
@@ -220,7 +232,7 @@
             ]
         },
         {
-            "sort": 15,
+            "sort": 16,
             "name": "Swiftly - Version",
             "description": "Зафиксировать версию Swiftly: тег с GitHub, например v1.4.10 или\nv1.4.11-beta.10. Ставится ровно она — в том числе более старая, для\nотката, — независимо от автообновления и беты.\n\nПусто — версия выбирается автоматически.\n\nВерсии: https://github.com/swiftly-solution/swiftlys2/releases",
             "env_variable": "SWIFTLY_VERSION",
@@ -235,7 +247,88 @@
             ]
         },
         {
-            "sort": 16,
+            "sort": 17,
+            "name": "Version - MetaMod",
+            "description": "Закрепить версию MetaMod — номер билда, например git1380 или 2.0.0-git1380.\nПусто — последняя (или закреплённая на всю ноду). С закреплением ставится\nровно эта версия, в том числе более старая — так откатываются.",
+            "env_variable": "METAMOD_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "nullable",
+                "string",
+                "max:32",
+                "regex:/^([0-9]+\\.[0-9]+\\.[0-9]+-)?git[0-9]+$/"
+            ]
+        },
+        {
+            "sort": 18,
+            "name": "Version - CounterStrikeSharp",
+            "description": "Закрепить версию CounterStrikeSharp — тег GitHub, например v1.0.360.\nПусто — последняя (или закреплённая на всю ноду). С закреплением ставится\nровно эта версия, в том числе более старая.",
+            "env_variable": "CSS_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "nullable",
+                "string",
+                "max:64",
+                "regex:/^v?[0-9][0-9A-Za-z.-]*$/"
+            ]
+        },
+        {
+            "sort": 19,
+            "name": "Addons - ModSharp",
+            "description": "Ставить ModSharp — платформу плагинов на C# со своим .NET (~70 МБ).\n\nПо умолчанию выключен. С MetaMod уживается, с CounterStrikeSharp и Swiftly —\nНЕТ: выключите их (CSS Enabled = 0 или другая платформа), иначе сервер может\nне запуститься. Настройки configs/core.json и admins.jsonc переживают\nобновления.",
+            "env_variable": "MODSHARP_ENABLED",
+            "default_value": 0,
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ]
+        },
+        {
+            "sort": 20,
+            "name": "Auto Update - ModSharp",
+            "description": "Подтягивать новые версии ModSharp при каждом запуске сервера.\nНа установку не влияет: включённый ModSharp ставится в любом случае.",
+            "env_variable": "MODSHARP_AUTOUPDATE",
+            "default_value": 1,
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ]
+        },
+        {
+            "sort": 21,
+            "name": "Version - ModSharp",
+            "description": "Закрепить версию ModSharp — тег GitHub, например git-197. Пусто — последняя.",
+            "env_variable": "MODSHARP_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "nullable",
+                "string",
+                "max:32",
+                "regex:/^git-?[0-9]+$/"
+            ]
+        },
+        {
+            "sort": 22,
+            "name": "Addons - Shared .NET",
+            "description": "Экспериментально. .NET у CounterStrikeSharp и ModSharp — ссылками на склад\nаддонов ноды, а не копией: ~100 МБ на сервер не занимают квоту диска. Как файлы\nигры из /mnt. Работает, только когда склад ноды ведёт updater (v1.4.0+).\nВключите сначала на одном сервере и проверьте, что плагины грузятся.",
+            "env_variable": "ADDONS_SHARED_RUNTIME",
+            "default_value": 0,
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ]
+        },
+        {
+            "sort": 23,
             "name": "Filter - Enabled",
             "description": "Включить или отключить фильтр консоли, чтобы скрыть\nопределенные сообщения. Настройте его с помощью файла\n'/game/mute_messages.cfg', если включено.",
             "env_variable": "ENABLE_FILTER",
@@ -247,7 +340,7 @@
             ]
         },
         {
-            "sort": 17,
+            "sort": 24,
             "name": "Filter - Preview Mode",
             "description": "Включить или отключить режим предварительного\nпросмотра для фильтра консоли. В режиме\nпредварительного просмотра заблокированные\nсообщения отображаются красным цветом, что позволяет\nвам проверить конфигурацию фильтра.",
             "env_variable": "FILTER_PREVIEW_MODE",
@@ -259,7 +352,7 @@
             ]
         },
         {
-            "sort": 18,
+            "sort": 25,
             "name": "Junk Cleaner - Enabled",
             "description": "Автоматически очищает логи через 72 часа, файлы демо\nчерез 7 дней и резервные копии раундов через 24 часа.",
             "env_variable": "CLEANUP_ENABLED",
@@ -271,7 +364,7 @@
             ]
         },
         {
-            "sort": 19,
+            "sort": 26,
             "name": "Custom Parameters",
             "description": "Пользовательские параметры запуска, которые нужно\nдобавить в строку запуска сервере",
             "env_variable": "CUSTOM_PARAMS",
@@ -284,7 +377,7 @@
             ]
         },
         {
-            "sort": 20,
+            "sort": 27,
             "name": "Bots Enable",
             "description": "Включить / отключить ботов на вашем сервере. По\nумолчанию эта опция включена.",
             "env_variable": "BOTS_ENABLED",
@@ -296,7 +389,7 @@
             ]
         },
         {
-            "sort": 21,
+            "sort": 28,
             "name": "Workshop Collections",
             "description": "ID коллекции из Workshop",
             "env_variable": "WORKSHOP_COLLECTIONS_ID",
@@ -309,7 +402,7 @@
             ]
         },
         {
-            "sort": 22,
+            "sort": 29,
             "name": "Workshop Map",
             "description": "Запуск карты по ID из Workshop",
             "env_variable": "WORKSHOP_MAP_ID",
@@ -322,7 +415,7 @@
             ]
         },
         {
-            "sort": 23,
+            "sort": 30,
             "name": "Using Rcon",
             "description": "Включить / отключить RCON для использования RCON-команд с\nвнешними инструментами. По умолчанию эта опция\nотключена.",
             "env_variable": "RCON_ENABLED",
@@ -334,7 +427,7 @@
             ]
         },
         {
-            "sort": 24,
+            "sort": 31,
             "name": "Rcon Password",
             "description": "Пароль для удалённого администрирования сервера.\n\nОбязателен, если включён Using Rcon: при пустом пароле egg НЕ включит\nRCON и напишет ошибку в консоль. Используйте длинный случайный пароль —\nтот, кто знает его, полностью управляет сервером.",
             "env_variable": "RCON_PASSWORD",
@@ -347,7 +440,7 @@
             ]
         },
         {
-            "sort": 25,
+            "sort": 32,
             "name": "MAP GROUP",
             "description": "Например, mb_bomb",
             "env_variable": "MAP_GROUP",
@@ -360,7 +453,7 @@
             ]
         },
         {
-            "sort": 26,
+            "sort": 33,
             "name": "Name Config File",
             "description": "Конфигурация сервера по умолчанию, например, cs2server.cfg",
             "env_variable": "CFG_FILE",
@@ -373,7 +466,7 @@
             ]
         },
         {
-            "sort": 27,
+            "sort": 34,
             "name": "Config file updater",
             "description": "Обновляем файл конфигурации если нужно",
             "env_variable": "UPDATE_CFG_FILE",
@@ -385,7 +478,7 @@
             ]
         },
         {
-            "sort": 28,
+            "sort": 35,
             "name": "Source AppID",
             "description": "НЕ ВИДИМО ДЛЯ ПОЛЬЗОВАТЕЛЕЙ. НЕ ИЗМЕНЯТЬ.",
             "env_variable": "SRCDS_APPID",
@@ -398,7 +491,7 @@
             ]
         },
         {
-            "sort": 29,
+            "sort": 36,
             "name": "Validate Install",
             "description": "Включает или отключает проверку файлов игрового\nсервера через SteamCMD. Установите значение 0, чтобы\nотключить.",
             "env_variable": "SRCDS_VALIDATE",
@@ -412,7 +505,7 @@
             ]
         },
         {
-            "sort": 30,
+            "sort": 37,
             "name": "Egg - Log Level",
             "description": "Уровень журнала для отображения Egg в консоли и файле\nжурнала.",
             "env_variable": "LOG_LEVEL",
@@ -426,7 +519,7 @@
             ]
         },
         {
-            "sort": 31,
+            "sort": 38,
             "name": "Egg - File Logging",
             "description": "Записывайте сообщения Egg в /egg.log, где они хранятся в\nтечение 48 часов.",
             "env_variable": "LOG_FILE_ENABLED",
@@ -438,7 +531,7 @@
             ]
         },
         {
-            "sort": 32,
+            "sort": 39,
             "name": "Debug",
             "description": "Включить режим отладки. ЕСЛИ ВЫ НЕ ЗНАЕТЕ, ДЛЯ ЧЕГО ЭТО\nНУЖНО, НЕ ВКЛЮЧАЙТЕ!",
             "env_variable": "DEBUG",
@@ -450,7 +543,7 @@
             ]
         },
         {
-            "sort": 33,
+            "sort": 40,
             "name": "TV Enabled",
             "description": "",
             "env_variable": "TV_ENABLED",
@@ -462,7 +555,7 @@
             ]
         },
         {
-            "sort": 34,
+            "sort": 41,
             "name": "TV Name",
             "description": "",
             "env_variable": "TV_NAME",
@@ -475,7 +568,7 @@
             ]
         },
         {
-            "sort": 35,
+            "sort": 42,
             "name": "TV Max Clients",
             "description": "",
             "env_variable": "TV_MAX_CLIENTS",
@@ -488,7 +581,7 @@
             ]
         },
         {
-            "sort": 36,
+            "sort": 43,
             "name": "TV Delay",
             "description": "",
             "env_variable": "TV_DELAY",
