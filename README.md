@@ -61,6 +61,14 @@ curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/
 `ADDON_PLATFORM=metamod`: CSS является плагином MetaMod и без него не запускается.
 При `swiftly` и `none` эта опция игнорируется.
 
+`Addons - ModSharp` (`MODSHARP_ENABLED`, **по умолчанию выключен**) — отдельный
+переключатель, как CSS. [ModSharp](https://github.com/Kxnrl/modsharp-public) —
+платформа плагинов на C# со своим .NET 10 (`game/sharp/runtime`). С MetaMod
+уживается, с CounterStrikeSharp и Swiftly — **нет**: консоль предупредит, но решение
+за вами (выключите `CSS_ENABLED` или выберите другую платформу). Настройки
+`game/sharp/configs/core.json` и `admins.jsonc` переживают обновления.
+`MODSHARP_AUTOUPDATE` и `MODSHARP_VERSION` — как у остальных.
+
 ### Отдельные переключатели обновления
 
 | Переменная | Что делает |
@@ -68,6 +76,20 @@ curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/
 | `METAMOD_AUTOUPDATE` | обновлять MetaMod при каждом запуске |
 | `CSS_AUTOUPDATE` | обновлять CounterStrikeSharp при каждом запуске |
 | `SWIFTLY_AUTOUPDATE` | обновлять Swiftly при каждом запуске |
+| `MODSHARP_AUTOUPDATE` | обновлять ModSharp при каждом запуске |
+
+### Фиксация версии любого аддона
+
+| Переменная | Пример | |
+|---|---|---|
+| `METAMOD_VERSION` | `git1380` или `2.0.0-git1380` | номер билда |
+| `CSS_VERSION` | `v1.0.360` | тег GitHub |
+| `SWIFTLY_VERSION` | `v1.4.10` | тег GitHub |
+| `MODSHARP_VERSION` | `git-197` | тег GitHub |
+
+С фиксацией ставится ровно эта версия — в том числе более старая, так
+откатываются. Пусто — последняя или та, что закреплена на всю ноду
+(`PIN_METAMOD`, `PIN_CSS`, `PIN_SWIFTLY`, `PIN_MODSHARP` в `.env` updater'а).
 
 Логика для каждого аддона одинаковая:
 
@@ -113,6 +135,33 @@ curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/
 срабатывает сразу. Чтобы освободить место — удалите папку в
 `game/csgo/addons/` через файловый менеджер панели.
 
+### Склад аддонов ноды
+
+Как с файлами игры: updater на хосте один раз готовит каждую нужную серверам
+версию аддона и кладёт её в `$BASE_DIR/server/.cs2-addons` (в контейнере —
+`/mnt/.cs2-addons`, только чтение). Сервер берёт оттуда и версию — без запроса к
+GitHub, — и файлы — без скачивания. После обновления CS2, когда перезапускаются
+все серверы разом, это снимает и лимит GitHub, и десятки одинаковых загрузок.
+
+- Что готовить, updater видит по переменным серверов в панели: платформа, CSS,
+  бета Swiftly, ModSharp, закреплённые версии. Склад обновляется раз в 30 минут.
+- Готовит версии тот же код, что ставит аддон на сервер: одноразовый контейнер из
+  образа серверов (`scripts/addon-store.sh`), от `nobody`. Раскладка файлов не
+  расходится.
+- Бинарники аддонов на сервер **копируются** — так же, как копируется `game/bin`.
+- `.NET` у CounterStrikeSharp и ModSharp (~100 МБ на сервер) можно подключать
+  **ссылками на склад**, как VPK: переменная `Addons - Shared .NET`
+  (`ADDONS_SHARED_RUNTIME`, по умолчанию выключена — включите на одном сервере и
+  проверьте плагины).
+- Нет склада или нужной версии на нём (образ старше v1.4.0, своя ветка Metamod) —
+  сервер качает сам, как раньше.
+
+### Запуск без GSLT — `ALLOW_TOKENLESS`
+
+`ALLOW_TOKENLESS=1` переключает `RequireLoginForDedicatedServers` в `gameinfo.gi`:
+сервер стартует без токена Steam, в публичный список не попадёт, подключаться —
+по IP. Для тестовых и закрытых серверов или когда токен заблокирован.
+
 ### Что происходит при недоступном GitHub
 
 Аддоны опциональны, поэтому сбой сети **не мешает серверу стартовать**:
@@ -121,8 +170,8 @@ curl -fsSL https://raw.githubusercontent.com/Armatura-Create/CS2-pelican/master/
 - аддон не установлен → сервер запускается без него, в консоли `error`.
 
 GitHub API даёт 60 запросов в час **на IP ноды** — лимит общий для всех контейнеров.
-Если серверов много и в логах появляется `HTTP 403`, задайте переменную окружения
-`GITHUB_TOKEN` (обычный read-only PAT), лимит поднимется до 5000 запросов в час.
+Со складом ноды серверы к API не ходят вовсе. Сам склад может работать с токеном:
+`GITHUB_TOKEN` в `.env` updater'а (обычный read-only PAT) — 5000 запросов в час.
 
 ---
 
@@ -226,7 +275,7 @@ find docker service -name '*.sh' -exec bash -n {} \;
 
 # самопроверка логики аддонов (gameinfo.gi + разбор релизов)
 docker run --rm -v "$PWD/docker:/src" alpine:3 \
-    sh -c 'apk add -q bash jq && bash /src/scripts/test-addons.sh'
+    sh -c 'apk add -q bash jq coreutils rsync findutils && bash /src/scripts/test-addons.sh'
 
 # egg: оба файла должны совпадать по смыслу
 python3 - <<'PY'

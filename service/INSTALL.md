@@ -313,6 +313,26 @@ sudo /opt/cs2-updater/watch.sh off       # выключить (журналы о
 
 ---
 
+## Склад аддонов
+
+Updater ведёт склад аддонов в `$BASE_DIR/server/.cs2-addons` сам — включать ничего
+не нужно (нужен образ серверов v1.4.0+). Серверы берут с него версии и файлы
+Metamod, CounterStrikeSharp, Swiftly, ModSharp и .NET вместо GitHub. Подробно — в
+[README](../README.md#склад-аддонов-ноды).
+
+Закрепить версию на всю ноду (серверы без своей `*_VERSION` поставят её, даже
+если она старше стоящей — так откатывают всю ноду):
+
+```bash
+PIN_CSS="v1.0.360"       # в /opt/cs2-updater/.env, затем: sudo systemctl restart cs2-updater
+```
+
+`PIN_METAMOD` (`git1380`), `PIN_SWIFTLY` (`v1.4.10`), `PIN_MODSHARP` (`git-197`) —
+так же. Пусто — последняя версия. `GITHUB_TOKEN` там же поднимает лимит GitHub.
+Состояние склада — в `doctor.sh`.
+
+---
+
 ## Проверка ноды
 
 ```bash

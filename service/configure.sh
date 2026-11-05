@@ -796,6 +796,17 @@ env_line() {
 }
 
 write_env() {
+    # Ключи, которых мастер не спрашивает (GITHUB_TOKEN, PIN_*, добавленные start.sh
+    # или руками), переносим как есть: раньше перенастройка их молча теряла.
+    local known=" BASE_DIR SRCDS_APPID STEAM_USER STEAM_PASS STEAM_AUTH EXTRA_FLAGS PELICAN_URL PELICAN_APP_TOKEN PELICAN_API_TOKEN PELICAN_IMAGE PELICAN_NODE_ID VERSION_CHECK_INTERVAL UPDATE_COUNTDOWN_TIME STEAMCMD_TIMEOUT RESTART_NOTIFY_CMD LOG_LEVEL LOG_FILE_ENABLED DISCORD_WEBHOOK GUARD_PPS_LIMIT GUARD_BAN_MINUTES GUARD_WHITELIST CONSOLE_LOG_DAYS GUARD_CONSOLE "
+    local other="" line
+    if [ -f .env ]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^([A-Z][A-Z0-9_]*)= ]] || continue
+            [[ "$known" == *" ${BASH_REMATCH[1]} "* ]] || other+="$line"$'\n'
+        done < .env
+    fi
+
     # 600 ДО записи: в .env лежат ключи панели и, возможно, пароль Steam
     rm -f .env
     (umask 077; : > .env)
@@ -835,6 +846,11 @@ write_env() {
         echo "# Наблюдение за консолью (watch.sh): дней хранить журналы; защита по консоли log|enforce|off"
         env_line CONSOLE_LOG_DAYS "$CONSOLE_LOG_DAYS"
         env_line GUARD_CONSOLE "$GUARD_CONSOLE"
+        if [ -n "$other" ]; then
+            echo
+            echo "# Прочие настройки (мастер их не спрашивает)"
+            printf '%s' "$other"
+        fi
     } > .env
     chmod 600 .env
 }

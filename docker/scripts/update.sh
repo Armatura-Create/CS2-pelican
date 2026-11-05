@@ -20,23 +20,57 @@ GAMEINFO_MNT="$BASE_FILES/game/csgo/gameinfo.gi"
 # ===========================
 # Реестр аддонов
 # ===========================
+# Склад аддонов ноды: хост (service/utils/addons-store.sh) готовит каждую нужную
+# серверам версию один раз — этим же кодом, через scripts/addon-store.sh — и
+# кладёт в $BASE_DIR/server/.cs2-addons, то есть сюда, в /mnt, только на чтение.
+# Сервер берёт оттуда и версию (index — без запроса к GitHub: лимит 60 в час
+# на IP ноды делят все серверы), и файлы (без скачивания). Склада нет или нужной
+# версии на нём нет — качает сам, как раньше.
+ADDON_STORE="$BASE_FILES/.cs2-addons"
+STORE_FRESH_MIN=120     # индекс старше двух часов: хост его не обновлял — не верим
+
+# .NET для ModSharp: ровно эта версия, ModSharp собран под неё
+DOTNET_VERSION="10.0.0"
+DOTNET_URL="https://builds.dotnet.microsoft.com/dotnet/Runtime/$DOTNET_VERSION/dotnet-runtime-$DOTNET_VERSION-linux-x64.tar.gz"
+SHARP_DIR="./game/sharp"
+
 # Маркер = файл, доказывающий РЕАЛЬНУЮ установку.
 # Проверять сам каталог нельзя: CounterStrikeSharp кладёт
 # addons/metamod/counterstrikesharp.vdf, из-за чего addons/metamod существует
 # даже когда самого MetaMod нет.
 addon_marker() {
     case "$1" in
-        metamod) printf '%s' "$OUTPUT_DIR/metamod/bin/linuxsteamrt64/metamod.2.cs2.so" ;;
-        css)     printf '%s' "$OUTPUT_DIR/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so" ;;
-        swiftly) printf '%s' "$OUTPUT_DIR/swiftlys2/bin/linuxsteamrt64/swiftlys2.so" ;;
+        metamod)  printf '%s' "$OUTPUT_DIR/metamod/bin/linuxsteamrt64/metamod.2.cs2.so" ;;
+        css)      printf '%s' "$OUTPUT_DIR/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so" ;;
+        swiftly)  printf '%s' "$OUTPUT_DIR/swiftlys2/bin/linuxsteamrt64/swiftlys2.so" ;;
+        modsharp) printf '%s' "$SHARP_DIR/bin/libmodsharp.so" ;;
+        dotnet)   printf '%s' "$SHARP_DIR/runtime/dotnet" ;;
     esac
 }
 
 addon_name() {
     case "$1" in
-        metamod) printf '%s' "Metamod" ;;
-        css)     printf '%s' "CSS" ;;
-        swiftly) printf '%s' "Swiftly" ;;
+        metamod)  printf '%s' "Metamod" ;;
+        css)      printf '%s' "CSS" ;;
+        swiftly)  printf '%s' "Swiftly" ;;
+        modsharp) printf '%s' "ModSharp" ;;
+        dotnet)   printf '%s' "DotNet" ;;
+    esac
+}
+
+# Репозиторий GitHub и архив релиза (регулярное выражение по имени файла)
+addon_repo() {
+    case "$1" in
+        css)      printf '%s' "roflmuffin/CounterStrikeSharp" ;;
+        swiftly)  printf '%s' "swiftly-solution/swiftlys2" ;;
+        modsharp) printf '%s' "Kxnrl/modsharp-public" ;;
+    esac
+}
+addon_asset_re() {
+    case "$1" in
+        css)      printf '%s' 'counterstrikesharp-with-runtime-linux-.*\.zip' ;;
+        swiftly)  printf '%s' 'swiftlys2-linux-v.*-with-runtimes\.zip' ;;
+        modsharp) printf '%s' 'ModSharp-git[0-9]+-linux\.zip' ;;
     esac
 }
 
@@ -46,9 +80,11 @@ addon_name() {
 # означало бы, что аддон молча выключится при первом же рестарте.
 addon_autoupdate() {
     case "$1" in
-        metamod) printf '%s' "${METAMOD_AUTOUPDATE:-1}" ;;
-        css)     printf '%s' "${CSS_AUTOUPDATE:-1}" ;;
-        swiftly) printf '%s' "${SWIFTLY_AUTOUPDATE:-1}" ;;
+        metamod)  printf '%s' "${METAMOD_AUTOUPDATE:-1}" ;;
+        css)      printf '%s' "${CSS_AUTOUPDATE:-1}" ;;
+        swiftly)  printf '%s' "${SWIFTLY_AUTOUPDATE:-1}" ;;
+        modsharp) printf '%s' "${MODSHARP_AUTOUPDATE:-1}" ;;
+        *)        printf '%s' "1" ;;   # .NET — версия задана выше, «новее» не бывает
     esac
 }
 
@@ -62,18 +98,42 @@ addon_beta() {
     esac
 }
 
-# Зафиксированная версия (тег GitHub) или пусто — выбирать самим.
-# Значение уходит в URL запроса к GitHub, поэтому пропускаем только теги.
+# store_index latest|beta|pin <аддон> — значение из индекса склада, или пусто
+store_index() {
+    local idx="$ADDON_STORE/index"
+    [ -f "$idx" ] && [ -n "$(find "$idx" -mmin -"$STORE_FRESH_MIN" 2>/dev/null || true)" ] || return 0
+    awk -v k="$1" -v a="$2" '$1 == k && $2 == a { print $3; exit }' "$idx" 2>/dev/null || true
+}
+
+# store_tree <аддон> <версия> — готовое дерево файлов на складе, или код 1
+store_tree() {
+    [[ "$2" =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+    local d="$ADDON_STORE/$1/$2"
+    [ -f "$d/.ready" ] && [ -d "$d/tree" ] || return 1
+    printf '%s' "$d/tree"
+}
+
+# Зафиксированная версия или пусто — выбирать самим. Сначала своя у сервера
+# (переменная egg), потом общая для ноды (PIN_* у хоста, приходит индексом
+# склада). Значение уходит в URL запроса, поэтому пропускаем только теги.
 addon_pin() {
-    local pin=""
+    local pin="" re
     case "$1" in
-        swiftly) pin="${SWIFTLY_VERSION:-}" ;;
+        metamod)  pin="${METAMOD_VERSION:-}";  re='^([0-9]+\.[0-9]+\.[0-9]+-)?git[0-9]+$' ;;
+        css)      pin="${CSS_VERSION:-}";      re='^v?[0-9][0-9A-Za-z.-]*$' ;;
+        swiftly)  pin="${SWIFTLY_VERSION:-}";  re='^v?[0-9][0-9A-Za-z.-]*$' ;;
+        modsharp) pin="${MODSHARP_VERSION:-}"; re='^git-?[0-9]+$' ;;
+        *)        return 0 ;;
     esac
+    [ -n "$pin" ] || pin="$(store_index pin "$1")"
     [ -n "$pin" ] || return 0
-    if [[ "$pin" =~ ^v?[0-9][0-9A-Za-z.-]*$ ]]; then
+    if [[ "$pin" =~ $re ]]; then
+        # ModSharp тегирует git-197, а пишут и git197
+        [ "$1" != modsharp ] || pin="git-${pin#git}"; pin="${pin/git--/git-}"
         printf '%s' "$pin"
     else
-        log_message "Некорректная версия '$pin' для $(addon_name "$1") — ожидается тег вида v1.4.10. Игнорирую." "error"
+        log_message "Некорректная версия '$pin' для $(addon_name "$1") — ожидается тег вида $(
+            case "$1" in metamod) echo git1380 ;; modsharp) echo git-197 ;; *) echo v1.4.10 ;; esac). Игнорирую." "error"
     fi
 }
 
@@ -183,6 +243,9 @@ create_symlinks() {
         case "$file" in
             # Копируются отдельно
             "$BASE_FILES/game/bin/"*|"$BASE_FILES/game/csgo/cfg/"*|"$BASE_FILES/steamapps/"*)
+                continue ;;
+            # Склад аддонов ноды: из него ставят, а не запускают — ссылки не нужны
+            "$BASE_FILES/.cs2-addons/"*)
                 continue ;;
             # КРИТИЧЕСКИ ВАЖНО: контейнер ПИШЕТ в эти пути. Симлинк увёл бы запись
             # в /mnt, который смонтирован только на чтение.
@@ -388,161 +451,29 @@ release_asset_url() {
 # Установка / обновление аддонов
 # ===========================
 
-# Устанавливает аддон, если его нет; обновляет, если стоит автообновление.
-# Возвращает 0, если после вызова аддон присутствует и пригоден к загрузке.
-ensure_addon() {
-    local type="$1"
-    local name marker installed=0
-    name="$(addon_name "$type")"
-    marker="$(addon_marker "$type")"
+# --- какую версию ставить -----------------------------------------------------
 
-    [ -e "$marker" ] && installed=1
-
-    if [ "$installed" -eq 1 ] && [ "$(addon_autoupdate "$type")" != "1" ] && [ -z "$(addon_pin "$type")" ]; then
-        log_message "$name установлен, автообновление выключено — оставляем текущую версию ($(get_current_version "$name"))." "info"
-        return 0
-    fi
-
-    local ok=0
-    if [ "$type" = "metamod" ]; then
-        install_metamod "$installed" && ok=1 || ok=0
-    else
-        install_github_addon "$type" "$installed" && ok=1 || ok=0
-    fi
-
-    if [ "$ok" -eq 1 ]; then
-        return 0
-    fi
-
-    # Сеть/зеркало недоступны. Если аддон уже стоял — продолжаем на старой версии.
-    if [ "$installed" -eq 1 ]; then
-        log_message "$name обновить не удалось, продолжаем на установленной версии ($(get_current_version "$name"))." "warning"
-        return 0
-    fi
-
-    log_message "$name не установлен, и установка не удалась. Сервер стартует без него." "error"
-    return 1
+# Последняя версия по GitHub. Ответ API остаётся в $TEMP_DIR/<аддон>-release.json:
+# по нему prepare_tree найдёт архив без второго запроса.
+github_latest() {
+    local type="$1" beta="$2" path json="$TEMP_DIR/$1-release.json"
+    if [ "$beta" = "1" ]; then path="releases?per_page=30"; else path="releases/latest"; fi
+    github_api "$(addon_repo "$type")" "$path" "$json" || return 1
+    pick_release "$json" "$(addon_asset_re "$type")" "$beta" ""
 }
 
-install_github_addon() {
-    local type="$1"
-    local installed="$2"
-
-    local repo pattern name
-    name="$(addon_name "$type")"
-    case "$type" in
-        css)
-            repo="roflmuffin/CounterStrikeSharp"
-            pattern="counterstrikesharp-with-runtime-linux-.*\\.zip"
-            ;;
-        swiftly)
-            repo="swiftly-solution/swiftlys2"
-            pattern="swiftlys2-linux-v.*-with-runtimes\\.zip"
-            ;;
-        *)
-            log_message "Неизвестный тип аддона: $type" "error"
-            return 1
-            ;;
-    esac
-
-    local temp_dir="$TEMP_DIR/$type"
-    local json="$TEMP_DIR/$type-release.json"
-    rm -rf "$temp_dir"
-    mkdir -p "$temp_dir" "$OUTPUT_DIR"
-
-    # Один запрос к API в любом режиме: лимит 60/час на IP делят все контейнеры ноды.
-    local pin beta path mode
-    pin="$(addon_pin "$type")"
-    beta="$(addon_beta "$type")"
-    if [ -n "$pin" ]; then
-        path="releases/tags/$pin";   mode="зафиксирована $pin"
-    elif [ "$beta" = "1" ]; then
-        path="releases?per_page=30"; mode="включая бета-версии"
-    else
-        path="releases/latest";      mode="только стабильные"
-    fi
-
-    log_message "Проверка обновлений для $name ($mode)..." "running"
-    github_api "$repo" "$path" "$json" || return 1
-
-    local new_version
-    new_version="$(pick_release "$json" "$pattern" "$beta" "$pin")"
-    if [ -z "$new_version" ]; then
-        log_message "Не удалось определить версию для $name: в ответе GitHub нет подходящего релиза." "error"
-        return 1
-    fi
-
-    if [ "$installed" -eq 1 ]; then
-        local current_version
-        current_version="$(get_current_version "$name")"
-        if [ "$current_version" = "$new_version" ]; then
-            log_message "У $name актуальная версия: $current_version" "success"
-            return 0
-        fi
-        # Без фиксации — только вперёд. Иначе выключенная бета откатила бы
-        # v1.4.11-beta.10 на стабильную v1.4.10, которая как раз и падает с
-        # текущей CS2. Обновимся, когда выйдет стабильная новее стоящей беты.
-        if [ -z "$pin" ] && [ -n "$current_version" ] && version_gt "$current_version" "$new_version"; then
-            log_message "У $name стоит $current_version — новее последней подходящей ($new_version). Оставляем." "info"
-            return 0
-        fi
-        log_message "$name: ${current_version:-неизвестна} → $new_version" "running"
-    else
-        log_message "$name не установлен. Устанавливаю версию $new_version..." "running"
-    fi
-
-    local asset_url
-    asset_url="$(release_asset_url "$json" "$pattern" "$new_version")"
-
-    if [ -z "$asset_url" ]; then
-        log_message "В релизе $name не найден файл по паттерну: $pattern" "error"
-        jq -r '.assets[]?.name' "$json" 2>/dev/null | while read -r a; do
-            log_message "  доступно: $a" "debug"
-        done
-        return 1
-    fi
-
-    log_message "Найден файл: $(basename "$asset_url")" "debug"
-    handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip" || return 1
-
-    local addons_src
-    addons_src="$(find "$temp_dir" -maxdepth 2 -type d -name 'addons' | head -n1 || true)"
-    if [ -z "$addons_src" ] || [ ! -d "$addons_src" ]; then
-        log_message "Структура архива $name не содержит папку addons/ (проверено до глубины 2)" "error"
-        return 1
-    fi
-
-    # Swiftly в некоторых релизах кладёт свой metamod — им управляем отдельно
-    if [ "$type" = "swiftly" ] && [ -d "$addons_src/metamod" ]; then
-        log_message "Удаляем metamod из архива Swiftly (управляется отдельно)" "debug"
-        rm -rf "$addons_src/metamod"
-    fi
-
-    cp -rf "$addons_src/." "$OUTPUT_DIR/" || {
-        log_message "Не удалось скопировать файлы $name в $OUTPUT_DIR" "error"
-        return 1
-    }
-
-    update_version_file "$name" "$new_version"
-    log_message "$name установлен/обновлён до версии $new_version" "success"
-    return 0
-}
-
-install_metamod() {
-    local installed="$1"
-    local branch="${METAMOD_BRANCH:-master}"   # stable | dev | master
-
-    local downloads_page="https://www.metamodsource.net/downloads.php?branch=${branch}"
-    local page
-    page="$(curl -fsSL -m 30 "$downloads_page" 2>/dev/null || true)"
+# Последний билд Metamod со страницы загрузок: печатает gitNNNN,
+# имя архива оставляет в $TEMP_DIR/metamod-file
+metamod_latest() {
+    local branch="${METAMOD_BRANCH:-master}" page file
+    [[ "$branch" =~ ^[a-z0-9.-]+$ ]] || { log_message "Некорректный METAMOD_BRANCH='$branch'." "error"; return 1; }
+    page="$(curl -fsSL -m 30 "https://www.metamodsource.net/downloads.php?branch=${branch}" 2>/dev/null || true)"
     if [ -z "$page" ]; then
-        log_message "Страница загрузок Metamod недоступна: $downloads_page" "error"
+        log_message "Страница загрузок Metamod недоступна (ветка $branch)." "error"
         return 1
     fi
-
-    # Берём linux-архив с максимальным номером билда gitNNNN
-    local file_name
-    file_name="$(
+    # linux-архив с максимальным номером билда gitNNNN
+    file="$(
         printf '%s' "$page" \
         | grep -oE 'mmsource-[^"]*-linux\.tar\.gz' \
         | tr -d '\r' \
@@ -550,53 +481,252 @@ install_metamod() {
         | sort -nr | head -n1 | awk '{ $1=""; sub(/^ /,""); print }' \
         || true
     )"
-
-    if [ -z "$file_name" ]; then
-        log_message "Не удалось найти ссылку на linux-архив на странице $downloads_page" "error"
+    if [[ ! "$file" =~ (git[0-9]+) ]]; then
+        log_message "Не удалось найти linux-архив Metamod на странице загрузок." "error"
         return 1
     fi
+    mkdir -p "$TEMP_DIR"
+    printf '%s' "$file" > "$TEMP_DIR/metamod-file"
+    printf '%s' "${BASH_REMATCH[1]}"
+}
 
-    local new_version
-    new_version="$(printf '%s' "$file_name" | grep -oE 'git[0-9]+' | tr -d '\r' || true)"
-    if [ -z "$new_version" ]; then
-        log_message "Не удалось распознать номер билда из имени: $file_name" "error"
-        return 1
+# Какую версию ставить: закреплённую, из индекса склада или по GitHub. Печатает версию.
+addon_target() {
+    local type="$1" pin beta v
+    pin="$(addon_pin "$type")"
+    if [ -n "$pin" ]; then
+        # у Metamod версия — номер билда: 2.0.0-git1380 → git1380
+        if [ "$type" = metamod ]; then printf 'git%s' "${pin##*git}"; else printf '%s' "$pin"; fi
+        return 0
     fi
-
-    if [ "$installed" -eq 1 ]; then
-        local current_version
-        current_version="$(get_current_version "Metamod")"
-        if [ "$current_version" = "$new_version" ]; then
-            log_message "У Metamod актуальная версия: $current_version" "success"
+    if [ "$type" = dotnet ]; then printf '%s' "$DOTNET_VERSION"; return 0; fi
+    beta="$(addon_beta "$type")"
+    # склад готовит Metamod только с основной ветки
+    if [ "$type" != metamod ] || [ "${METAMOD_BRANCH:-master}" = master ]; then
+        v="$(store_index "$([ "$beta" = 1 ] && echo beta || echo latest)" "$type")"
+        if [ -n "$v" ]; then
+            log_message "$(addon_name "$type"): версия из склада ноды — $v" "debug"
+            printf '%s' "$v"
             return 0
         fi
-        log_message "Новая версия для Metamod: $new_version (была ${current_version:-неизвестна})" "running"
+    fi
+    if [ "$type" = metamod ]; then
+        metamod_latest
     else
-        log_message "Metamod не установлен. Устанавливаю версию $new_version..." "running"
+        log_message "Проверка обновлений для $(addon_name "$type") ($([ "$beta" = 1 ] && echo "включая бета-версии" || echo "только стабильные"))..." "running"
+        github_latest "$type" "$beta"
+    fi
+}
+
+# --- откуда взять файлы --------------------------------------------------------
+
+# URL архива релиза с тегом $2. Ответ про «последний» уже лежит в $TEMP_DIR;
+# для закреплённой версии — запрос releases/tags/<тег>.
+release_url() {
+    local type="$1" tag="$2" re="${3:-$(addon_asset_re "$1")}" json="$TEMP_DIR/$1-release.json" url=""
+    [ -f "$json" ] && url="$(release_asset_url "$json" "$re" "$tag" 2>/dev/null || true)"
+    if [ -z "$url" ]; then
+        json="$TEMP_DIR/$type-tag.json"
+        github_api "$(addon_repo "$type")" "releases/tags/$tag" "$json" || return 1
+        url="$(release_asset_url "$json" "$re" "$tag" 2>/dev/null || true)"
+    fi
+    if [ -z "$url" ]; then
+        log_message "В релизе $(addon_name "$type") $tag нет архива под шаблон: $re" "error"
+        return 1
+    fi
+    printf '%s' "$url"
+}
+
+# Скачивает и раскладывает версию $2 аддона в каталог $3 — ровно в том виде,
+# в каком она ложится на сервер. Этим же кодом склад ноды готовит свои версии
+# (scripts/addon-store.sh), поэтому раскладка у них не расходится.
+#   metamod, css, swiftly — содержимое addons/;  modsharp — sharp/ и shared/
+#   (расширения);  dotnet — сам .NET.
+prepare_tree() {
+    local type="$1" version="$2" dest="$3" work="$TEMP_DIR/prep-$1" url src file pin mmver
+    rm -rf "$work"; mkdir -p "$work" "$dest"
+    case "$type" in
+        metamod)
+            pin="$(addon_pin metamod)"
+            # точное имя архива — со страницы загрузок (там же, где версию узнали)
+            if [ -z "$pin" ] && ! grep -qs -- "-$version-" "$TEMP_DIR/metamod-file"; then
+                metamod_latest >/dev/null || true
+            fi
+            if grep -qs -- "-$version-" "$TEMP_DIR/metamod-file"; then
+                file="$(cat "$TEMP_DIR/metamod-file")"
+            else
+                # закреплённый билд: 2.0.0-git1380 или просто git1380 (тогда 2.0.0)
+                mmver="${pin%git*}"; mmver="${mmver%-}"
+                file="mmsource-${mmver:-2.0.0}-${version}-linux.tar.gz"
+            fi
+            mmver="${file#mmsource-}"; mmver="${mmver%%-*}"
+            handle_download_and_extract "https://www.sourcemm.net/mmsdrop/${mmver%.*}/${file}" \
+                "$work/metamod.tar.gz" "$work/x" "tar.gz" || return 1
+            ;;
+        css|swiftly)
+            url="$(release_url "$type" "$version")" || return 1
+            handle_download_and_extract "$url" "$work/download.zip" "$work/x" "zip" || return 1
+            ;;
+        modsharp)
+            url="$(release_url modsharp "$version")" || return 1
+            handle_download_and_extract "$url" "$work/core.zip" "$work/x" "zip" || return 1
+            [ -d "$work/x/sharp" ] || { log_message "В архиве ModSharp нет каталога sharp/" "error"; return 1; }
+            cp -r "$work/x/sharp" "$dest/sharp"
+            url="$(release_url modsharp "$version" 'ModSharp-git[0-9]+-linux-extensions\.zip')" || return 1
+            handle_download_and_extract "$url" "$work/ext.zip" "$dest/shared" "zip" || return 1
+            return 0
+            ;;
+        dotnet)
+            handle_download_and_extract "$DOTNET_URL" "$work/dotnet.tar.gz" "$dest" "tar.gz" || return 1
+            return 0
+            ;;
+        *) log_message "Неизвестный тип аддона: $type" "error"; return 1 ;;
+    esac
+
+    src="$(find "$work/x" -maxdepth 2 -type d -name 'addons' | head -n1 || true)"
+    if [ -z "$src" ]; then
+        log_message "В архиве $(addon_name "$type") нет папки addons/ (проверено до глубины 2)" "error"
+        return 1
+    fi
+    # Swiftly в некоторых релизах кладёт свой metamod — им управляем отдельно
+    if [ "$type" = swiftly ] && [ -d "$src/metamod" ]; then
+        log_message "Удаляем metamod из архива Swiftly (управляется отдельно)" "debug"
+        rm -rf "$src/metamod"
+    fi
+    cp -r "$src/." "$dest/"
+}
+
+# --- разложить на сервере ------------------------------------------------------
+
+# .NET ссылками на склад вместо копии — как VPK из /mnt: ~100 МБ на сервер не
+# занимают квоту. Включается переменной egg: проверено не на всех плагинах.
+shared_runtime() {
+    [ "${ADDONS_SHARED_RUNTIME:-0}" = "1" ] && [[ "$1" == "$ADDON_STORE/"* ]]
+}
+
+# Ссылки на файлы $1 вместо копий; каталоги — настоящие
+link_tree() {
+    local src="$1" dst="$2" rel
+    rm -rf "$dst"
+    mkdir -p "$dst"
+    while IFS= read -r rel; do mkdir -p "$dst/$rel"; done < <(cd "$src" && find . -mindepth 1 -type d)
+    while IFS= read -r rel; do ln -s "$src/${rel#./}" "$dst/${rel#./}"; done < <(cd "$src" && find . \( -type f -o -type l \))
+}
+
+# Каталог .NET с прошлого раза мог состоять из ссылок на склад — копия поверх
+# них ушла бы в /mnt, а он только на чтение. Убираем, если там ссылки.
+drop_links() {
+    [ -d "$1" ] && [ -n "$(find "$1" -type l -lname "$ADDON_STORE/*" -print -quit 2>/dev/null)" ] && rm -rf "$1"
+    return 0
+}
+
+apply_tree() {
+    local type="$1" src="$2" f keep="$TEMP_DIR/sharp-keep"
+    mkdir -p "$OUTPUT_DIR"
+    case "$type" in
+        metamod|swiftly)
+            rsync -a "$src/" "$OUTPUT_DIR/"
+            ;;
+        css)
+            local rt="$OUTPUT_DIR/counterstrikesharp/dotnet"
+            if shared_runtime "$src" && [ -d "$src/counterstrikesharp/dotnet" ]; then
+                rsync -a --exclude='/counterstrikesharp/dotnet/' "$src/" "$OUTPUT_DIR/"
+                link_tree "$src/counterstrikesharp/dotnet" "$rt"
+            else
+                drop_links "$rt"
+                rsync -a "$src/" "$OUTPUT_DIR/"
+            fi
+            ;;
+        modsharp)
+            # настройки сервера переживают обновление: в архиве — свои по умолчанию
+            rm -rf "$keep"; mkdir -p "$keep"
+            for f in core.json admins.jsonc; do
+                [ ! -f "$SHARP_DIR/configs/$f" ] || cp "$SHARP_DIR/configs/$f" "$keep/"
+            done
+            mkdir -p "$SHARP_DIR/shared"
+            rsync -a "$src/sharp/" "$SHARP_DIR/"
+            [ ! -d "$src/shared" ] || rsync -a "$src/shared/" "$SHARP_DIR/shared/"
+            for f in core.json admins.jsonc; do
+                [ ! -f "$keep/$f" ] || cp "$keep/$f" "$SHARP_DIR/configs/$f"
+            done
+            ;;
+        dotnet)
+            if shared_runtime "$src"; then
+                link_tree "$src" "$SHARP_DIR/runtime"
+            else
+                drop_links "$SHARP_DIR/runtime"
+                mkdir -p "$SHARP_DIR/runtime"
+                rsync -a "$src/" "$SHARP_DIR/runtime/"
+            fi
+            ;;
+    esac
+}
+
+# Устанавливает аддон, если его нет; обновляет, если стоит автообновление.
+# Возвращает 0, если после вызова аддон присутствует и пригоден к загрузке.
+ensure_addon() {
+    local type="$1"
+    local name marker installed=0 pin want current tree
+    name="$(addon_name "$type")"
+    marker="$(addon_marker "$type")"
+    pin="$(addon_pin "$type")"
+
+    [ -e "$marker" ] && installed=1
+
+    if [ "$installed" -eq 1 ] && [ "$(addon_autoupdate "$type")" != "1" ] && [ -z "$pin" ]; then
+        log_message "$name установлен, автообновление выключено — оставляем текущую версию ($(get_current_version "$name"))." "info"
+        return 0
     fi
 
-    local url="https://www.sourcemm.net/mmsdrop/2.0/${file_name}"
-    local tmp_tar="$TEMP_DIR/metamod.tar.gz"
-    rm -f "$tmp_tar"
-    rm -rf "$TEMP_DIR/metamod"
-    mkdir -p "$TEMP_DIR" "$OUTPUT_DIR"
-
-    handle_download_and_extract "$url" "$tmp_tar" "$TEMP_DIR/metamod" "tar.gz" || return 1
-
-    local addons_src
-    addons_src="$(find "$TEMP_DIR/metamod" -maxdepth 2 -type d -name 'addons' | head -n1 || true)"
-    if [ -z "$addons_src" ]; then
-        log_message "Не нашли папку addons/ после распаковки Metamod" "error"
+    want="$(addon_target "$type" || true)"
+    if [[ ! "$want" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+        if [ "$installed" -eq 1 ]; then
+            log_message "$name: новую версию узнать не удалось, продолжаем на установленной ($(get_current_version "$name"))." "warning"
+            return 0
+        fi
+        log_message "$name не установлен, и версию узнать не удалось. Сервер стартует без него." "error"
         return 1
     fi
 
-    cp -rf "$addons_src/." "$OUTPUT_DIR/" || {
-        log_message "Не удалось скопировать файлы Metamod в $OUTPUT_DIR" "error"
-        return 1
-    }
+    current="$(get_current_version "$name")"
+    if [ "$installed" -eq 1 ]; then
+        if [ "$current" = "$want" ]; then
+            log_message "У $name актуальная версия: $current" "success"
+            return 0
+        fi
+        # Без фиксации — только вперёд. Иначе выключенная бета откатила бы
+        # v1.4.11-beta.10 на стабильную v1.4.10, которая как раз и падает с
+        # текущей CS2. Обновимся, когда выйдет стабильная новее стоящей беты.
+        if [ -z "$pin" ] && [ -n "$current" ] && version_gt "$current" "$want"; then
+            log_message "У $name стоит $current — новее последней подходящей ($want). Оставляем." "info"
+            return 0
+        fi
+        log_message "$name: ${current:-неизвестна} → $want" "running"
+    else
+        log_message "$name не установлен. Устанавливаю версию $want..." "running"
+    fi
 
-    update_version_file "Metamod" "$new_version"
-    log_message "Metamod установлен/обновлён до $new_version" "success"
+    if tree="$(store_tree "$type" "$want")"; then
+        log_message "$name $want — со склада ноды, без скачивания." "info"
+    else
+        tree="$TEMP_DIR/$type-tree"
+        rm -rf "$tree"
+        if ! prepare_tree "$type" "$want" "$tree"; then
+            if [ "$installed" -eq 1 ]; then
+                log_message "$name обновить не удалось, продолжаем на установленной версии ($current)." "warning"
+                return 0
+            fi
+            log_message "$name не установлен, и установка не удалась. Сервер стартует без него." "error"
+            return 1
+        fi
+    fi
+
+    if ! apply_tree "$type" "$tree"; then
+        log_message "Не удалось разложить файлы $name" "error"
+        return 1
+    fi
+    update_version_file "$name" "$want"
+    log_message "$name установлен/обновлён до версии $want" "success"
     return 0
 }
 
@@ -604,9 +734,9 @@ install_metamod() {
 # gameinfo.gi
 # ===========================
 
-# Идемпотентно приводит gameinfo.gi к переданному набору аддонов:
-# сносит ВСЕ строки `Game csgo/addons/*` и вставляет нужные после Game_LowViolence
-# в порядке аргументов. Остальные строки файла не трогаются, поэтому ручные правки
+# Идемпотентно приводит gameinfo.gi к переданному набору аддонов (пути
+# поиска: csgo/addons/metamod, sharp, …): сносит ВСЕ строки `Game csgo/addons/*`
+# и `Game sharp` и вставляет нужные после Game_LowViolence в порядке аргументов. Остальные строки файла не трогаются, поэтому ручные правки
 # пользователя сохраняются. Повторный вызов с теми же аргументами ничего не меняет.
 sync_gameinfo() {
     local -a wanted=("$@")
@@ -618,12 +748,12 @@ sync_gameinfo() {
 
     local block="" entry
     for entry in ${wanted[@]+"${wanted[@]}"}; do
-        block+=$'\t\t\tGame\tcsgo/addons/'"$entry"$'\n'
+        block+=$'\t\t\tGame\t'"$entry"$'\n'
     done
 
     local tmp="${GAMEINFO_FILE}.tmp"
     if ! awk -v block="$block" '
-            /[Gg]ame[[:blank:]]+csgo\/addons\// { next }
+            /[Gg]ame[[:blank:]]+(csgo\/addons\/|sharp[[:space:]]*$)/ { next }
             { print }
             /Game_LowViolence/ && !inserted { printf "%s", block; inserted = 1 }
             END { if (!inserted) exit 3 }
@@ -645,10 +775,26 @@ sync_gameinfo() {
     return 0
 }
 
-# 0, если файлы различаются не только строками аддонов (их ставит sync_gameinfo)
+# 0, если файлы различаются не только строками, которые ставим сами:
+# аддоны (sync_gameinfo) и RequireLoginForDedicatedServers (apply_tokenless)
 gameinfo_differs() {
-    ! diff -q <(grep -v 'csgo/addons/' "$1" | tr -d '\r') \
-              <(grep -v 'csgo/addons/' "$2" | tr -d '\r') >/dev/null 2>&1
+    local own='csgo/addons/|[Gg]ame[[:blank:]]+sharp|RequireLoginForDedicatedServers'
+    ! diff -q <(grep -Ev "$own" "$1" | tr -d '\r') \
+              <(grep -Ev "$own" "$2" | tr -d '\r') >/dev/null 2>&1
+}
+
+# ALLOW_TOKENLESS=1 — сервер стартует без GSLT (в публичный список не попадёт,
+# подключиться можно по IP): RequireLoginForDedicatedServers "0". Иначе — "1".
+apply_tokenless() {
+    local want=1
+    [ "${ALLOW_TOKENLESS:-0}" = "1" ] && want=0
+    [ -f "$GAMEINFO_FILE" ] || return 0
+    if ! grep -q 'RequireLoginForDedicatedServers' "$GAMEINFO_FILE"; then
+        [ "$want" = 1 ] || log_message "ALLOW_TOKENLESS=1, но в gameinfo.gi нет RequireLoginForDedicatedServers — без GSLT сервер может не запуститься." "warning"
+        return 0
+    fi
+    sed -i -E "s/(RequireLoginForDedicatedServers\"?[[:space:]]+\"?)[0-9]/\1$want/" "$GAMEINFO_FILE"
+    [ "$want" = 1 ] || log_message "ALLOW_TOKENLESS=1: сервер запустится без GSLT — в публичный список не попадёт, подключение по IP." "info"
 }
 
 # Контейнер держит СВОЮ копию gameinfo.gi: дописывает туда аддоны, а /mnt —
@@ -766,7 +912,7 @@ cleanup_and_update() {
     case "$platform" in
         metamod)
             if ensure_addon metamod; then
-                entries+=("metamod")
+                entries+=("csgo/addons/metamod")
                 # дефолт 1 — как в egg: иначе старый egg + новый образ = CSS молча пропал
                 if [ "${CSS_ENABLED:-1}" = "1" ]; then
                     # CSS — плагин MetaMod: своей записи в gameinfo.gi не имеет,
@@ -781,7 +927,7 @@ cleanup_and_update() {
             ;;
         swiftly)
             if ensure_addon swiftly; then
-                entries+=("swiftlys2")
+                entries+=("csgo/addons/swiftlys2")
             fi
             ;;
         none)
@@ -789,9 +935,23 @@ cleanup_and_update() {
             ;;
     esac
 
+    # ModSharp — отдельный переключатель, как CounterStrikeSharp. С MetaMod
+    # уживается, с CounterStrikeSharp и Swiftly — нет: предупреждаем, решает владелец.
+    if [ "${MODSHARP_ENABLED:-0}" = "1" ]; then
+        [ "$platform" != swiftly ] || log_message "ModSharp и Swiftly несовместимы — сервер может не запуститься. Оставьте что-то одно." "warning"
+        [ "$platform" != metamod ] || [ "${CSS_ENABLED:-1}" != "1" ] \
+            || log_message "ModSharp и CounterStrikeSharp несовместимы — сервер может не запуститься. Выключите один (CSS_ENABLED или MODSHARP_ENABLED)." "warning"
+        if ensure_addon dotnet && ensure_addon modsharp; then
+            entries+=("sharp")
+        else
+            log_message "ModSharp не подключён: без него и его .NET сервер стартует как есть." "error"
+        fi
+    fi
+
     # Файлы отключённых аддонов НЕ удаляем: плагины и конфиги пользователя остаются,
     # обратное переключение платформы мгновенное.
     sync_gameinfo ${entries[@]+"${entries[@]}"} || true
+    apply_tokenless || true
 
     if [ "${UPDATE_CFG_FILE:-0}" = "1" ]; then
         update_server_cfg
